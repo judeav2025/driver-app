@@ -1,6 +1,7 @@
 import { approach, clamp } from './steer.js';
 import { fitCanvas, makeView, drawRoad, drawCourse, drawCar, xToPixel, spinProgress, spinAngle } from './road.js';
 import { buildCourse, distanceAt, SPEED_START, SPIN_MS } from './course.js';
+import { io } from './net.js';
 
 const $ = (id) => document.getElementById(id);
 const canvas = $('road');

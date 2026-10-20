@@ -1,6 +1,7 @@
 import { lateralTilt, tiltToSteer, integrate, approach, clamp } from './steer.js';
 import { fitCanvas, makeView, drawRoad, drawCourse, drawCar, xToPixel, spinProgress, spinAngle } from './road.js';
 import { buildCourse, distanceAt, findCrash, scoreFor, SPEED_START, SPIN_MS } from './course.js';
+import { io } from './net.js';
 
 const SEND_MS = 66; // ~15 Hz
 const TILT_TIMEOUT_MS = 1000;

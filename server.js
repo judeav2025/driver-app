@@ -1,29 +1,27 @@
 import { createServer } from 'node:http';
+import { randomUUID } from 'node:crypto';
 import { fileURLToPath } from 'node:url';
 import path from 'node:path';
 import express from 'express';
-import { Server } from 'socket.io';
-import QRCode from 'qrcode';
-import { Game } from './lib/game.js';
+import { WebSocketServer } from 'ws';
+import { Room } from './lib/room.js';
+import { qrResponse } from './lib/qr.js';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const publicDir = path.join(here, 'public');
-
-export const SNAPSHOT_MS = 66;
 
 // raceMs / countdownMs are overridable so tests can run a whole race in a blink.
 export function createDriverServer(options = {}) {
   const app = express();
   const httpServer = createServer(app);
-  const io = new Server(httpServer);
-  const game = new Game(options);
-  let endTimer = null;
+  const wss = new WebSocketServer({ server: httpServer, path: '/ws' });
+  const room = new Room(options);
 
-  // Behind Render/Fly/Railway the TLS terminates at the proxy.
+  // Behind a tunnel or proxy the TLS terminates there.
   app.set('trust proxy', true);
 
   app.get('/health', (req, res) => {
-    res.json({ ok: true, players: game.count, phase: game.phase });
+    res.json(room.health());
   });
 
   app.get('/screen', (req, res) => {
@@ -31,69 +29,23 @@ export function createDriverServer(options = {}) {
   });
 
   app.get('/qr.svg', async (req, res) => {
-    const fallback = `${req.protocol}://${req.get('host')}/`;
-    const target = typeof req.query.u === 'string' && req.query.u ? req.query.u : fallback;
-    if (!/^https?:\/\//.test(target) || target.length > 512) {
-      return res.status(400).send('u must be an http(s) URL');
-    }
-    const svg = await QRCode.toString(target, { type: 'svg', margin: 1, errorCorrectionLevel: 'M' });
-    res.type('image/svg+xml').set('Cache-Control', 'public, max-age=300').send(svg);
+    const qr = await qrResponse(`${req.protocol}://${req.get('host')}${req.originalUrl}`);
+    if (qr.status === 200) res.set('Cache-Control', 'public, max-age=300');
+    res.status(qr.status).type(qr.type).send(qr.body);
   });
 
   app.use(express.static(publicDir));
 
-  io.on('connection', (socket) => {
-    socket.on('join', (msg) => {
-      if (game.players.has(socket.id)) return;
-      const player = game.join(socket.id, msg || {});
-      socket.emit('welcome', player);
-    });
-
-    socket.on('state', (msg) => {
-      game.setState(socket.id, msg);
-    });
-
-    socket.on('crash', () => {
-      game.crash(socket.id);
-    });
-
-    // Only the big screen starts races; phones are players.
-    socket.on('start', () => {
-      if (game.players.has(socket.id)) return;
-      const info = game.startRace();
-      if (!info) return;
-      io.emit('start', info);
-      endTimer = setTimeout(endRace, info.startsInMs + info.durationMs);
-    });
-
-    socket.on('disconnect', () => {
-      game.leave(socket.id);
-    });
-
-    // Late-joining screens see everyone immediately instead of waiting for a change,
-    // and pick up a race that's already running (or the last results).
-    socket.emit('snapshot', game.snapshot());
-    if (game.race) socket.emit('start', game.raceInfo());
-    else if (game.leaderboard) socket.emit('end', { leaderboard: game.leaderboard });
+  wss.on('connection', (ws) => {
+    const id = randomUUID();
+    ws.on('message', (data) => room.receive(id, data.toString()));
+    ws.on('close', () => room.disconnect(id));
+    room.connect(id, (text) => ws.send(text));
   });
 
-  function endRace() {
-    endTimer = null;
-    const result = game.endRace();
-    if (result) io.emit('end', result);
-  }
+  httpServer.on('close', () => room.close());
 
-  const timer = setInterval(() => {
-    const snap = game.takeSnapshot();
-    if (snap) io.emit('snapshot', snap);
-  }, SNAPSHOT_MS);
-
-  httpServer.on('close', () => {
-    clearInterval(timer);
-    clearTimeout(endTimer);
-  });
-
-  return { app, httpServer, io, game };
+  return { app, httpServer, wss, room, game: room.game };
 }
 
 if (process.argv[1] === fileURLToPath(import.meta.url)) {

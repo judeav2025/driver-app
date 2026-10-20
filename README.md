@@ -40,7 +40,7 @@ People can join mid-race; they score from when they joined.
 
 ## How it works
 
-- `server.js`: Express + Socket.IO. Serves `public/`, `/screen`, `/health` and `/qr.svg?u=<url>`. Relays car positions and broadcasts a `snapshot` about 15 times a second when anything changed. Starts races and ends them on a timer.
+- `server.js` (Node) and `worker/index.js` (Cloudflare): both run `lib/room.js` over plain WebSockets at `/ws`. Serve `public/`, `/screen`, `/health` and `/qr.svg?u=<url>`. Relays car positions and broadcasts a `snapshot` about 15 times a second when anything changed. Starts races and ends them on a timer.
 - `lib/game.js`: in-memory player list (name, colour, x in -1..1, row, crashes) and the race clock: lobby → countdown → racing → results. Keeps score.
 - `public/js/course.js`: shared by phones, screen, server and tests. Seeded PRNG (mulberry32), course built from the seed (rows of boxes, each with a guaranteed reachable gap), speed curve, box collisions, scoring.
 - `public/js/phone.js`: join, tilt (`deviceorientation` gamma, calibrated on Start, small deadzone), hold-to-steer buttons if tilt is unavailable, Screen Wake Lock. During a race it simulates its own car, detects box hits locally, spins out, and shows time, score and results. Other cars are ghosts.
@@ -58,4 +58,6 @@ Messages:
 
 ## Hosting
 
-Served through a Cloudflare Tunnel to a single `npm start`. Game state is held in server memory, so run exactly **one** instance. Two would split the room.
+Cloudflare Workers (free plan). `wrangler.jsonc` defines the Worker, the static assets in `public/` and one `GameRoom` Durable Object that holds the game. A push to `main` deploys through the Cloudflare Git connection. `npm run cf:dev` runs the same setup locally; `npm start` still runs the plain Node server for tests and `npm run share`.
+
+Game state is held in memory in one room, so there must be exactly **one** instance.

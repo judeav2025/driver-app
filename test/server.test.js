@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { once } from 'node:events';
-import { io as connect } from 'socket.io-client';
+import { io } from '../public/js/net.js';
 import { createDriverServer } from '../server.js';
 
 async function startServer(t, options) {
@@ -10,16 +10,30 @@ async function startServer(t, options) {
   await once(server.httpServer, 'listening');
   const base = `http://localhost:${server.httpServer.address().port}`;
   t.after(() => {
-    server.io.close();
+    for (const ws of server.wss.clients) ws.terminate();
+    server.wss.close();
     server.httpServer.close();
   });
   return { ...server, base };
 }
 
 function client(t, base) {
-  const socket = connect(base, { transports: ['websocket'], forceNew: true });
+  const socket = io({ url: base.replace(/^http/, 'ws') + '/ws' });
   t.after(() => socket.close());
   return socket;
+}
+
+// Resolves with [data] for the next event, like events.once.
+function next(socket, event, timeoutMs = 2000) {
+  return new Promise((resolve, reject) => {
+    const timer = setTimeout(() => reject(new Error(`timed out waiting for ${event}`)), timeoutMs);
+    const onEvent = (data) => {
+      clearTimeout(timer);
+      socket.off(event, onEvent);
+      resolve([data]);
+    };
+    socket.on(event, onEvent);
+  });
 }
 
 // Resolves with the first snapshot that satisfies the predicate.
@@ -50,7 +64,7 @@ test('pages and the socket.io client are served', async (t) => {
     ['/screen', 'id="qr"'],
     ['/js/phone.js', 'deviceorientation'],
     ['/js/course.js', 'buildCourse'],
-    ['/socket.io/socket.io.js', 'io'],
+    ['/js/net.js', 'WebSocket'],
   ]) {
     const res = await fetch(base + path);
     assert.equal(res.status, 200, path);
@@ -76,7 +90,7 @@ test('a joined player is welcomed and their x is relayed to everyone', async (t)
   const phone = client(t, base);
 
   phone.emit('join', {});
-  const [welcome] = await once(phone, 'welcome');
+  const [welcome] = await next(phone, 'welcome');
   assert.equal(welcome.id, phone.id);
   assert.equal(welcome.x, 0);
   assert.ok(welcome.name && welcome.color);
@@ -98,11 +112,11 @@ test('a second tab sees the first player, and leaving removes the car', async (t
   const { base } = await startServer(t);
   const a = client(t, base);
   a.emit('join', {});
-  await once(a, 'welcome');
+  await next(a, 'welcome');
 
   const b = client(t, base);
   b.emit('join', {});
-  await once(b, 'welcome');
+  await next(b, 'welcome');
   await snapshotWhere(b, (s) => s.players.length === 2);
 
   a.close();
@@ -114,7 +128,7 @@ test('joining twice on one socket does not duplicate the car', async (t) => {
   const { base, game } = await startServer(t);
   const phone = client(t, base);
   phone.emit('join', {});
-  await once(phone, 'welcome');
+  await next(phone, 'welcome');
   phone.emit('join', {});
   await new Promise((r) => setTimeout(r, 100));
   assert.equal(game.count, 1);
@@ -123,7 +137,7 @@ test('joining twice on one socket does not duplicate the car', async (t) => {
 test('state from a socket that never joined is ignored', async (t) => {
   const { base, game } = await startServer(t);
   const lurker = client(t, base);
-  await once(lurker, 'connect');
+  await next(lurker, 'connect');
   lurker.emit('state', { x: 0.5 });
   await new Promise((r) => setTimeout(r, 100));
   assert.equal(game.count, 0);
@@ -134,14 +148,14 @@ test('the screen starts a race; everyone gets the seed, crashes are counted, res
   const screen = client(t, base);
   const phone = client(t, base);
   phone.emit('join', {});
-  await once(phone, 'welcome');
+  await next(phone, 'welcome');
 
   phone.emit('start'); // players can't start the race
   await new Promise((r) => setTimeout(r, 50));
 
-  const phoneStart = once(phone, 'start');
+  const phoneStart = next(phone, 'start');
   screen.emit('start');
-  const [start] = await once(screen, 'start');
+  const [start] = await next(screen, 'start');
   assert.deepEqual((await phoneStart)[0].seed, start.seed);
   assert.equal(start.durationMs, 300);
   assert.ok(start.startsInMs > 0 && start.startsInMs <= 50);
@@ -149,21 +163,21 @@ test('the screen starts a race; everyone gets the seed, crashes are counted, res
   // A screen opened mid-race picks it up straight away.
   await new Promise((r) => setTimeout(r, 80));
   const late = client(t, base);
-  const [lateStart] = await once(late, 'start');
+  const [lateStart] = await next(late, 'start');
   assert.equal(lateStart.seed, start.seed);
   assert.ok(lateStart.startsInMs < 0);
 
   phone.emit('crash');
   await snapshotWhere(screen, (s) => s.players[0]?.crashes === 1);
 
-  const [{ leaderboard }] = await once(screen, 'end');
+  const [{ leaderboard }] = await next(screen, 'end');
   assert.equal(leaderboard.length, 1);
   assert.equal(leaderboard[0].id, phone.id);
   assert.equal(leaderboard[0].crashes, 1);
 
   // Screens that connect after the race see the results.
   const after = client(t, base);
-  const [{ leaderboard: again }] = await once(after, 'end');
+  const [{ leaderboard: again }] = await next(after, 'end');
   assert.deepEqual(again, leaderboard);
   const health = await (await fetch(`${base}/health`)).json();
   assert.equal(health.phase, 'results');
