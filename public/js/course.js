@@ -21,6 +21,27 @@ export const CAR_HALF_L = 0.12;
 export const BOX_HALF = 0.13;
 export const BOX_DRAW = 0.32; // drawn size; a bit bigger than the hitbox feels fair
 
+// The weird stuff: pedestrians (and animals) wander across the road, and pickups sit in
+// the gaps between box rows. Hitting a pedestrian is a crash for you; they hop clear, unhurt.
+export const PED_HALF = 0.09;
+export const PED_EDGE = 1.05; // they walk edge to edge, just onto the kerb
+export const PED_DRAW = 0.3;
+export const PICKUP_HALF = 0.12;
+export const PICKUP_DRAW = 0.3;
+export const COIN_POINTS = 30;
+
+// ms is how long the effect lasts (for a coin, how long its badge shows).
+export const PICKUPS = {
+  coin: { emoji: '🪙', ms: 900, text: `🪙 +${COIN_POINTS} pts` },
+  star: { emoji: '⭐', ms: 5_000, text: '⭐ Invincible!' },
+  mirror: { emoji: '🪞', ms: 6_000, text: '🪞 Mirror!\nSteering is flipped' },
+  ink: { emoji: '🦑', ms: 4_500, text: '🦑 Squid ink!' },
+};
+const PICKUP_ODDS = [['coin', 0.4], ['star', 0.15], ['mirror', 0.25], ['ink', 0.2]];
+
+// Later in the race the crowd gets stranger.
+const WALKERS = ['🚶', '🏃', '🚶‍♀️', '🦆', '🐢', '🐧', '🐄', '🦩', '🦖', '🤖'];
+
 const FIRST_BOX_SEC = 2.5;
 const FREE_HALF = 0.5; // half-width of the guaranteed gap in every row
 
@@ -56,8 +77,11 @@ export function buildCourse(seed, durationMs = RACE_MS) {
   const rand = mulberry32(seed);
   const T = durationMs / 1000;
   const finish = distanceAt(T, durationMs);
+  const extra = mulberry32(seed ^ 0x5eed5eed); // separate stream, so boxes don't depend on it
   const rows = [];
   const boxes = [];
+  const pedestrians = [];
+  const pickups = [];
   let y = distanceAt(FIRST_BOX_SEC, durationMs);
   let freeX = 0;
 
@@ -75,6 +99,7 @@ export function buildCourse(seed, durationMs = RACE_MS) {
     rows.push(row);
 
     const gap = 2.4 - 1.1 * progress;
+    addExtra(extra, y + gap / 2, progress, finish, pedestrians, pickups);
     // Time to the next row at the speed we'll be doing there, and how far a car can steer in it.
     const sec = gap / SPEED_END;
     const reach = STEER_SPEED * sec * 0.6;
@@ -82,31 +107,75 @@ export function buildCourse(seed, durationMs = RACE_MS) {
     y += gap;
   }
 
-  return { seed, durationMs, finish, rows, boxes };
+  return { seed, durationMs, finish, rows, boxes, pedestrians, pickups };
 }
+
+// Halfway between two box rows: a pedestrian, a pickup, or nothing. Pedestrians get likelier,
+// faster and weirder as the race goes on.
+function addExtra(rand, y, progress, finish, pedestrians, pickups) {
+  if (y > finish - 2) return;
+  const roll = rand();
+  const pedOdds = 0.1 + 0.35 * progress;
+  if (roll < pedOdds) {
+    const pool = WALKERS.slice(0, 3 + Math.round(progress * (WALKERS.length - 3)));
+    pedestrians.push({
+      y,
+      phase: rand() * 2,
+      speed: 0.35 + rand() * (0.15 + 0.5 * progress),
+      emoji: pool[Math.floor(rand() * pool.length)],
+    });
+  } else if (roll < pedOdds + 0.25) {
+    let pick = rand();
+    const [kind] = PICKUP_ODDS.find(([, odds]) => (pick -= odds) < 0) ?? PICKUP_ODDS[0];
+    pickups.push({ x: rand() * 1.7 - 0.85, y, kind });
+  }
+}
+
+// Where a pedestrian is `sec` seconds into the race: back and forth across the road.
+// dir is +1 walking right, -1 walking left.
+export function pedestrianAt(ped, sec) {
+  const span = PED_EDGE * 2;
+  const u = (((ped.phase + (sec * ped.speed) / span) % 2) + 2) % 2;
+  const s = u < 1 ? u : 2 - u;
+  return { x: -PED_EDGE + s * span, dir: u < 1 ? 1 : -1 };
+}
+
+const overlaps = (carX, dist, x, y, half) => Math.abs(carX - x) < CAR_HALF_W + half && Math.abs(dist - y) < CAR_HALF_L + half;
 
 export function hitsBox(carX, dist, box) {
-  return Math.abs(carX - box.x) < CAR_HALF_W + BOX_HALF && Math.abs(dist - box.y) < CAR_HALF_L + BOX_HALF;
+  return overlaps(carX, dist, box.x, box.y, BOX_HALF);
 }
 
-// Index of the first box the car overlaps that it hasn't already hit, or -1.
-// Boxes are sorted by y, so this only scans the stretch around the car.
-export function findCrash(course, carX, dist, alreadyHit) {
-  const { boxes } = course;
-  const reach = CAR_HALF_L + BOX_HALF;
+// Index of the first item the car overlaps that isn't in `done`, or -1.
+// Items are sorted by y, so this only scans the stretch around the car.
+function findOverlap(items, carX, dist, done, half, xOf = (item) => item.x) {
+  const reach = CAR_HALF_L + half;
   let lo = 0;
-  let hi = boxes.length;
+  let hi = items.length;
   while (lo < hi) {
     const mid = (lo + hi) >> 1;
-    if (boxes[mid].y < dist - reach) lo = mid + 1;
+    if (items[mid].y < dist - reach) lo = mid + 1;
     else hi = mid;
   }
-  for (let i = lo; i < boxes.length && boxes[i].y <= dist + reach; i++) {
-    if (!alreadyHit.has(i) && hitsBox(carX, dist, boxes[i])) return i;
+  for (let i = lo; i < items.length && items[i].y <= dist + reach; i++) {
+    if (!done.has(i) && overlaps(carX, dist, xOf(items[i]), items[i].y, half)) return i;
   }
   return -1;
 }
 
-export function scoreFor(secondsDriven, crashes) {
-  return Math.round(Math.max(0, secondsDriven) * POINTS_PER_SEC) - crashes * CRASH_PENALTY;
+export function findCrash(course, carX, dist, alreadyHit) {
+  return findOverlap(course.boxes, carX, dist, alreadyHit, BOX_HALF);
+}
+
+// Pedestrians move, so this needs the race time too.
+export function findPedestrian(course, carX, dist, sec, alreadyHit) {
+  return findOverlap(course.pedestrians, carX, dist, alreadyHit, PED_HALF, (ped) => pedestrianAt(ped, sec).x);
+}
+
+export function findPickup(course, carX, dist, alreadyTaken) {
+  return findOverlap(course.pickups, carX, dist, alreadyTaken, PICKUP_HALF);
+}
+
+export function scoreFor(secondsDriven, crashes, coins = 0) {
+  return Math.round(Math.max(0, secondsDriven) * POINTS_PER_SEC) - crashes * CRASH_PENALTY + coins * COIN_POINTS;
 }

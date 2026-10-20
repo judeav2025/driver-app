@@ -161,6 +161,7 @@ button.small {
 
 #banner:empty { display: none; }
 #banner.count { font-size: 5rem; color: #ffd54f; }
+#banner.flash { font-size: 1.8rem; }
 
 #debug {
   padding: 6px 16px;

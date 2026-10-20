@@ -201,3 +201,21 @@ test('the screen starts a race; everyone gets the seed, crashes are counted, res
   const health = await (await fetch(`${base}/health`)).json();
   assert.equal(health.phase, 'results');
 });
+
+test('pickups a phone reports are shown to the screen and counted once', async (t) => {
+  const { base, game } = await startServer(t, { countdownMs: 0 });
+  const screen = client(t, base);
+  const phone = client(t, base);
+  phone.emit('join', {});
+  await next(phone, 'welcome');
+  screen.emit('start');
+  await next(phone, 'start');
+
+  const { kind } = game.race.course.pickups[0];
+  phone.emit('pickup', { i: 0 });
+  phone.emit('pickup', { i: 0 });
+  phone.emit('pickup', { i: 'nope' });
+  await snapshotWhere(screen, (s) => s.players[0]?.pickups === 1 && s.players[0].lastPickup === kind);
+  await new Promise((r) => setTimeout(r, 100));
+  assert.equal(game.players.get(phone.id).pickups, 1);
+});

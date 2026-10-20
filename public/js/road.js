@@ -1,12 +1,15 @@
 // Shared canvas drawing for the phone and the big screen.
 // World coordinates (see course.js) map to pixels through a view, so both show the same course.
 
-import { BOX_DRAW } from './course.js';
+import { BOX_DRAW, PED_DRAW, PICKUP_DRAW, PICKUPS, pedestrianAt } from './course.js';
 
 export const ROAD_FRACTION = 0.8; // most of the canvas width the road may take
 export const EDGE = 1.15; // road half-width in world units; car centres stay inside ±1
 export const MIN_VISIBLE = 6.5; // world units of road the canvas height must show
 export const CAR_DRAW = 0.3; // car emoji size in world units
+export const BOINK_SEC = 0.9; // a pedestrian's cartoon hop out of the way
+
+const EMOJI_FONT = 'system-ui, "Apple Color Emoji", "Segoe UI Emoji", sans-serif';
 
 // Pixels per world unit, road centre, and the line the cars sit on.
 export function makeView(w, h, carFrac = 0.8) {
@@ -51,11 +54,14 @@ export function drawRoad(ctx, view, dist) {
   }
 }
 
-// Boxes and the finish line that are on screen at this distance.
-export function drawCourse(ctx, view, course, dist) {
+// Boxes, pickups, pedestrians and the finish line that are on screen at this distance.
+// sec is race time (pedestrians move with it); taken holds pickup indices to hide;
+// boinked maps pedestrian index -> {sec, x} for the ones that were hit.
+export function drawCourse(ctx, view, course, dist, { sec = 0, taken = null, boinked = null } = {}) {
   if (!course) return;
   const ahead = view.carY / view.unit + 1;
   const behind = (view.h - view.carY) / view.unit + 1;
+  const visible = (y) => y >= dist - behind && y <= dist + ahead;
 
   const fy = yToPixel(view, course.finish, dist);
   if (course.finish < dist + ahead && course.finish > dist - behind) drawFinish(ctx, view, fy);
@@ -66,6 +72,60 @@ export function drawCourse(ctx, view, course, dist) {
     if (box.y > dist + ahead) break;
     drawBox(ctx, xToPixel(view, box.x), yToPixel(view, box.y, dist), size);
   }
+
+  course.pickups.forEach((item, i) => {
+    if (!visible(item.y) || taken?.has(i)) return;
+    drawPickup(ctx, xToPixel(view, item.x), yToPixel(view, item.y, dist), PICKUP_DRAW * view.unit, item.kind, sec);
+  });
+
+  course.pedestrians.forEach((ped, i) => {
+    if (!visible(ped.y)) return;
+    const py = yToPixel(view, ped.y, dist);
+    const hit = boinked?.get(i);
+    if (hit) {
+      const t = (sec - hit.sec) / BOINK_SEC;
+      if (t < 1) drawBoinked(ctx, view, ped, hit.x, py, t);
+      return;
+    }
+    const { x, dir } = pedestrianAt(ped, sec);
+    drawEmoji(ctx, ped.emoji, xToPixel(view, x), py, PED_DRAW * view.unit, { flip: dir > 0 });
+  });
+}
+
+// Emoji mostly face left, so flip to face right.
+function drawEmoji(ctx, emoji, px, py, size, { flip = false, angle = 0, alpha = 1 } = {}) {
+  ctx.save();
+  ctx.globalAlpha *= alpha;
+  ctx.translate(px, py);
+  ctx.rotate(angle);
+  if (flip) ctx.scale(-1, 1);
+  ctx.font = `${size}px ${EMOJI_FONT}`;
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.fillText(emoji, 0, 0);
+  ctx.restore();
+}
+
+// A bobbing token on a glowing disc so it reads as "grab me" (or "avoid me").
+function drawPickup(ctx, px, py, size, kind, sec) {
+  const bob = Math.sin(sec * 5 + px) * size * 0.08;
+  ctx.save();
+  ctx.fillStyle = kind === 'mirror' || kind === 'ink' ? 'rgba(186, 104, 200, 0.55)' : 'rgba(255, 235, 59, 0.55)';
+  ctx.beginPath();
+  ctx.arc(px, py + bob, size * 0.62, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.restore();
+  drawEmoji(ctx, PICKUPS[kind].emoji, px, py + bob, size * 0.85);
+}
+
+// Cartoon hop clear of the road with dizzy stars. Nobody gets hurt.
+function drawBoinked(ctx, view, ped, x, py, t) {
+  const away = x >= 0 ? 1 : -1;
+  const px = xToPixel(view, x + away * t * 1.2);
+  const lift = Math.sin(Math.PI * t) * view.unit * 0.6;
+  const size = PED_DRAW * view.unit * (1 + 0.4 * Math.sin(Math.PI * t));
+  drawEmoji(ctx, ped.emoji, px, py - lift, size, { flip: away > 0, angle: away * t * Math.PI * 2, alpha: 1 - t * t });
+  drawEmoji(ctx, '💫', px, py - lift - size * 0.7, size * 0.6, { alpha: 1 - t });
 }
 
 function drawFinish(ctx, view, y) {
@@ -111,12 +171,20 @@ function roundRect(ctx, x, y, w, h, r) {
   ctx.roundRect(x, y, w, h, r);
 }
 
-// Top-down car facing up the road, shaded to look 3D. angle rotates it for spin-outs.
-export function drawCar(ctx, px, py, size, { color, label, alpha = 1, angle = 0, crashed = false }) {
+// Top-down car facing up the road, shaded to look 3D. angle rotates it for spin-outs;
+// badge is a pickup emoji shown next to it; glow (a hue) draws a shimmering ring for the star.
+export function drawCar(ctx, px, py, size, { color, label, alpha = 1, angle = 0, crashed = false, badge = null, glow = null }) {
   const w = size * 0.62;
   const l = size;
   ctx.save();
   ctx.globalAlpha = alpha;
+  if (glow != null) {
+    ctx.strokeStyle = `hsl(${glow % 360}, 100%, 60%)`;
+    ctx.lineWidth = Math.max(3, size * 0.12);
+    ctx.beginPath();
+    ctx.arc(px, py, size * 0.8, 0, Math.PI * 2);
+    ctx.stroke();
+  }
   ctx.translate(px, py);
   ctx.rotate(angle);
 
@@ -196,10 +264,16 @@ export function drawCar(ctx, px, py, size, { color, label, alpha = 1, angle = 0,
   if (crashed) {
     ctx.save();
     ctx.globalAlpha = alpha;
-    ctx.font = `${size * 0.8}px system-ui, "Apple Color Emoji", "Segoe UI Emoji", sans-serif`;
+    ctx.font = `${size * 0.8}px ${EMOJI_FONT}`;
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
     ctx.fillText('💥', px + size * 0.45, py - size * 0.55);
+    ctx.restore();
+  }
+  if (badge) {
+    ctx.save();
+    ctx.globalAlpha = alpha;
+    drawEmoji(ctx, badge, px - size * 0.5, py - size * 0.6, size * 0.6);
     ctx.restore();
   }
   if (label) {

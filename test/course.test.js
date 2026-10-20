@@ -2,7 +2,9 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
   mulberry32, buildCourse, distanceAt, speedAt, findCrash, hitsBox, scoreFor,
-  RACE_MS, SPEED_START, SPEED_END, SPIN_MS, CAR_HALF_W, BOX_HALF, CRASH_PENALTY,
+  findPedestrian, findPickup, pedestrianAt,
+  RACE_MS, SPEED_START, SPEED_END, SPIN_MS, CAR_HALF_W, CAR_HALF_L, BOX_HALF, CRASH_PENALTY,
+  PED_EDGE, PED_HALF, PICKUP_HALF, PICKUPS, COIN_POINTS,
 } from '../public/js/course.js';
 import { SPEED as STEER_SPEED, integrate } from '../public/js/steer.js';
 
@@ -101,6 +103,55 @@ test('collisions use overlapping boxes and skip boxes already hit', () => {
 test('score rewards time driven and penalises crashes', () => {
   assert.equal(scoreFor(60, 0), 600);
   assert.equal(scoreFor(60, 2), 600 - 2 * CRASH_PENALTY);
+  assert.equal(scoreFor(60, 1, 3), 600 - CRASH_PENALTY + 3 * COIN_POINTS);
   assert.equal(scoreFor(-5, 0), 0);
   assert.ok(SPIN_MS > 0);
+});
+
+test('pedestrians and pickups are seeded, sorted, on the road and clear of the box rows', () => {
+  assert.deepEqual(buildCourse(5).pedestrians, buildCourse(5).pedestrians);
+  assert.deepEqual(buildCourse(5).pickups, buildCourse(5).pickups);
+  for (let seed = 0; seed < 20; seed++) {
+    const { rows, pedestrians, pickups, finish } = buildCourse(seed);
+    assert.ok(pedestrians.length > 5, `seed ${seed} has pedestrians`);
+    assert.ok(pickups.length > 5, `seed ${seed} has pickups`);
+    for (const list of [pedestrians, pickups]) {
+      for (let i = 0; i < list.length; i++) {
+        assert.ok(list[i].y < finish);
+        if (i) assert.ok(list[i].y > list[i - 1].y);
+        // Never overlapping a box row, so they don't block the guaranteed gap.
+        for (const row of rows) assert.ok(Math.abs(row.y - list[i].y) > BOX_HALF + PICKUP_HALF + CAR_HALF_L);
+      }
+    }
+    for (const item of pickups) {
+      assert.ok(item.kind in PICKUPS);
+      assert.ok(Math.abs(item.x) <= 0.85);
+    }
+  }
+});
+
+test('pedestrians walk edge to edge and back, and later ones are weirder', () => {
+  const ped = { y: 10, phase: 0, speed: 0.5, emoji: '🚶' };
+  assert.deepEqual(pedestrianAt(ped, 0), { x: -PED_EDGE, dir: 1 });
+  const crossSec = (PED_EDGE * 2) / ped.speed;
+  assert.ok(Math.abs(pedestrianAt(ped, crossSec / 2).x) < 1e-9);
+  assert.equal(pedestrianAt(ped, crossSec * 1.5).dir, -1);
+  for (let t = -5; t < 60; t += 0.37) assert.ok(Math.abs(pedestrianAt(ped, t).x) <= PED_EDGE + 1e-9);
+
+  const { pedestrians } = buildCourse(3);
+  const early = pedestrians.filter((p) => p.y < pedestrians.at(-1).y / 4);
+  assert.ok(early.every((p) => ['🚶', '🏃', '🚶‍♀️', '🦆'].includes(p.emoji)), 'first quarter is mostly people');
+});
+
+test('pedestrian and pickup collisions follow where they are, and skip ones already done', () => {
+  const ped = { y: 10, phase: 0, speed: 0.5, emoji: '🦆' };
+  const course = { pedestrians: [ped], pickups: [{ x: 0.3, y: 20, kind: 'coin' }] };
+  const { x } = pedestrianAt(ped, 4);
+  assert.equal(findPedestrian(course, x, 10, 4, new Set()), 0);
+  assert.equal(findPedestrian(course, x + CAR_HALF_W + PED_HALF + 0.01, 10, 4, new Set()), -1);
+  assert.equal(findPedestrian(course, x, 10, 4, new Map([[0, {}]])), -1);
+  assert.equal(findPedestrian(course, x, 11, 4, new Set()), -1);
+  assert.equal(findPickup(course, 0.3, 20, new Set()), 0);
+  assert.equal(findPickup(course, 0.3, 20, new Set([0])), -1);
+  assert.equal(findPickup(course, -0.3, 20, new Set()), -1);
 });

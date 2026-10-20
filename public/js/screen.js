@@ -1,6 +1,6 @@
 import { approach, clamp } from './steer.js';
 import { fitCanvas, makeView, drawRoad, drawCourse, drawCar, xToPixel, spinProgress, spinAngle } from './road.js';
-import { buildCourse, distanceAt, scoreFor, SPEED_START, SPIN_MS } from './course.js';
+import { buildCourse, distanceAt, findPedestrian, pedestrianAt, scoreFor, SPEED_START, SPIN_MS, PICKUPS } from './course.js';
 import { io } from './net.js';
 
 const $ = (id) => document.getElementById(id);
@@ -11,8 +11,8 @@ const joinUrl = `${location.origin}/`;
 $('qr').src = `/qr.svg?u=${encodeURIComponent(joinUrl)}`;
 $('url').textContent = joinUrl.replace(/^https?:\/\//, '').replace(/\/$/, '');
 
-const cars = new Map(); // id -> {name, color, x, shownX, row, crashes, crashedAt, seenAt}
-let race = null; // {seed, course, startAt, endAt} in performance.now() time
+const cars = new Map(); // id -> {name, color, x, shownX, row, crashes, coins, crashedAt, seenAt, pickups, lastPickup, pickedAt}
+let race = null; // {seed, course, startAt, endAt, boinked} in performance.now() time
 let results = null;
 let dist = 0;
 
@@ -27,7 +27,8 @@ socket.on('snapshot', ({ players }) => {
     const prev = cars.get(p.id);
     const crashedAt = prev && p.crashes > prev.crashes ? performance.now() : prev?.crashedAt ?? null;
     const seenAt = prev?.seenAt ?? performance.now();
-    cars.set(p.id, { ...p, shownX: prev ? prev.shownX : p.x, crashedAt, seenAt });
+    const pickedAt = prev && p.pickups > prev.pickups ? performance.now() : prev?.pickedAt ?? null;
+    cars.set(p.id, { ...p, shownX: prev ? prev.shownX : p.x, crashedAt, seenAt, pickedAt });
   }
   for (const id of cars.keys()) if (!seen.has(id)) cars.delete(id);
   $('count').textContent = `${players.length} player${players.length === 1 ? '' : 's'}`;
@@ -35,8 +36,9 @@ socket.on('snapshot', ({ players }) => {
 
 socket.on('start', ({ seed, startsInMs, durationMs }) => {
   const startAt = performance.now() + startsInMs;
-  const course = race?.seed === seed ? race.course : buildCourse(seed, durationMs);
-  race = { seed, course, startAt, endAt: startAt + durationMs };
+  const same = race?.seed === seed;
+  const course = same ? race.course : buildCourse(seed, durationMs);
+  race = { seed, course, startAt, endAt: startAt + durationMs, boinked: same ? race.boinked : new Map() };
   results = null;
 });
 
@@ -73,7 +75,7 @@ function renderResults() {
     name.textContent = r.name;
     const score = document.createElement('span');
     score.className = 'score';
-    score.textContent = `${r.score} pts · 💥 ${r.crashes}`;
+    score.textContent = `${r.score} pts · 💥 ${r.crashes}${r.coins ? ` · 🪙 ${r.coins}` : ''}`;
     li.append(dot, name, score);
     list.append(li);
   }
@@ -93,7 +95,7 @@ function renderLive(now, ph) {
   if (live.hidden) return;
   const elapsed = (car) => (Math.min(now, race.endAt) - Math.max(race.startAt, car.seenAt)) / 1000;
   const standings = [...cars.values()]
-    .map((car) => ({ ...car, score: ph === 'countdown' ? 0 : scoreFor(elapsed(car), car.crashes) }))
+    .map((car) => ({ ...car, score: ph === 'countdown' ? 0 : scoreFor(elapsed(car), car.crashes, car.coins) }))
     .sort((a, b) => b.score - a.score || a.crashes - b.crashes || a.name.localeCompare(b.name));
   const list = $('liveBoard');
   for (const [id, row] of liveRows) {
@@ -157,18 +159,34 @@ function rows(h, n) {
   return { size, rowY: (i) => top + i * gap };
 }
 
+// The pickup a car grabbed last, while its effect lasts.
+function carEffect(car, now) {
+  const kind = car.lastPickup;
+  return kind && PICKUPS[kind] && car.pickedAt != null && now - car.pickedAt < PICKUPS[kind].ms ? kind : null;
+}
+
+// Phones decide who crashed; the big screen just makes any pedestrian a car drives into hop clear.
+function boinkPedestrians(sec) {
+  for (const car of cars.values()) {
+    const j = findPedestrian(race.course, car.shownX, dist, sec, race.boinked);
+    if (j >= 0) race.boinked.set(j, { sec, x: pedestrianAt(race.course.pedestrians[j], sec).x });
+  }
+}
+
 let last = performance.now();
 function frame(now) {
   const dt = clamp((now - last) / 1000, 0, 0.1);
   last = now;
   const ph = phase(now);
-  if (race) dist = distanceAt((now - race.startAt) / 1000, race.endAt - race.startAt);
+  const sec = race ? (now - race.startAt) / 1000 : 0;
+  if (race) dist = distanceAt(sec, race.endAt - race.startAt);
   else dist += dt * SPEED_START;
+  if (ph === 'racing') boinkPedestrians(sec);
 
   const { ctx, w, h } = fitCanvas(canvas);
   const view = makeView(w, h);
   drawRoad(ctx, view, dist);
-  drawCourse(ctx, view, race?.course, dist);
+  drawCourse(ctx, view, race?.course, dist, { sec, boinked: race?.boinked });
 
   // During a race everyone is on the same stretch of road, so every car sits on the same line.
   const sorted = [...cars.values()].sort((a, b) => a.row - b.row);
@@ -177,12 +195,15 @@ function frame(now) {
   sorted.forEach((car, i) => {
     car.shownX = approach(car.shownX, car.x, dt);
     const spin = spinProgress(car.crashedAt, now, SPIN_MS);
+    const kind = inRace ? carEffect(car, now) : null;
     drawCar(ctx, xToPixel(view, car.shownX), rowY(i), size, {
       color: car.color,
       label: car.name,
       alpha: inRace ? 0.85 : 1,
       angle: spin == null ? 0 : spinAngle(spin),
       crashed: spin != null,
+      badge: kind ? PICKUPS[kind].emoji : null,
+      glow: kind === 'star' ? now * 0.5 : null,
     });
   });
 

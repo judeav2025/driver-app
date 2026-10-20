@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { Game } from '../lib/game.js';
 import { randomName, cleanName, cleanColor, COLORS } from '../lib/names.js';
+import { buildCourse, COIN_POINTS } from '../public/js/course.js';
 
 test('join assigns a funny name, a palette colour and centres the car', () => {
   const game = new Game();
@@ -167,4 +168,56 @@ test('a reconnecting phone keeps its exact name, suffix included, even if its ol
   const back = game.join('b2', { name: second.name, color: second.color });
   assert.equal(back.name, 'Sam (2)');
   assert.equal(back.color, second.color);
+});
+
+// A seed whose course has a pickup of this kind, and that pickup's index.
+function seedWith(kind) {
+  for (let seed = 1; ; seed++) {
+    const i = buildCourse(seed, 60_000).pickups.findIndex((p) => p.kind === kind);
+    if (i >= 0) return { seed, i };
+  }
+}
+
+test('pickups count only while racing, once each; coins add to the score', () => {
+  const c = clock();
+  const game = new Game({ now: c.now, raceMs: 60_000, countdownMs: 1_000 });
+  game.join('a', { name: 'Coin Car' });
+  game.join('b', { name: 'Plain Car' });
+  const coin = seedWith('coin');
+  assert.equal(game.pickup('a', coin.i), false, 'no race');
+  game.startRace(coin.seed);
+  assert.equal(game.pickup('a', coin.i), false, 'countdown');
+  c.t += 1_000;
+  assert.equal(game.pickup('a', coin.i), true);
+  assert.equal(game.pickup('a', coin.i), false, 'already taken');
+  assert.equal(game.pickup('b', coin.i), true, 'everyone gets their own');
+  assert.equal(game.pickup('a', 9999), false);
+  assert.equal(game.pickup('a', '1'), false);
+  assert.equal(game.pickup('nobody', 0), false);
+  const snap = game.snapshot().players.find((p) => p.id === 'a');
+  assert.equal(snap.pickups, 1);
+  assert.equal(snap.lastPickup, 'coin');
+  assert.equal(snap.coins, 1, 'so the live scoreboard can count coins');
+
+  c.t += 60_000;
+  const { leaderboard } = game.endRace();
+  assert.deepEqual(leaderboard.map((r) => [r.name, r.coins, r.score]), [
+    ['Coin Car', 1, 600 + COIN_POINTS],
+    ['Plain Car', 1, 600 + COIN_POINTS],
+  ]);
+});
+
+test('non-coin pickups are recorded but do not score, and a new race resets them', () => {
+  const c = clock();
+  const game = new Game({ now: c.now, raceMs: 60_000, countdownMs: 0 });
+  game.join('a');
+  const mirror = seedWith('mirror');
+  game.startRace(mirror.seed);
+  assert.equal(game.pickup('a', mirror.i), true);
+  assert.equal(game.snapshot().players[0].lastPickup, 'mirror');
+  c.t += 60_000;
+  assert.equal(game.endRace().leaderboard[0].score, 600);
+  game.startRace(mirror.seed);
+  assert.equal(game.players.get('a').pickups, 0);
+  assert.equal(game.pickup('a', mirror.i), true, 'can be taken again next race');
 });
