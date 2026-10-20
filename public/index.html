@@ -21,7 +21,13 @@
   </section>
 
   <section id="game" hidden>
-    <header id="me"><span id="swatch"></span><span id="myname">…</span></header>
+    <header id="me">
+      <span id="swatch"></span><span id="myname">…</span>
+      <span id="topButtons">
+        <button id="recal" class="small">Re-centre tilt</button>
+        <button id="leave" class="small">Leave</button>
+      </span>
+    </header>
     <canvas id="road"></canvas>
     <div id="hud" hidden></div>
     <div id="banner"></div>
@@ -29,7 +35,6 @@
       <button id="left" class="steer" aria-label="Steer left">◀</button>
       <button id="right" class="steer" aria-label="Steer right">▶</button>
     </div>
-    <button id="recal" class="small">Re-centre tilt</button>
     <footer id="debug">connecting…</footer>
   </section>
 

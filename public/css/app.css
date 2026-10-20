@@ -120,10 +120,9 @@ button.steer {
 
 button.steer.down { background: rgba(255, 213, 79, 0.5); }
 
+#topButtons { display: flex; gap: 8px; margin-left: auto; }
+
 button.small {
-  position: absolute;
-  right: 12px;
-  top: max(8px, env(safe-area-inset-top));
   padding: 6px 10px;
   font-size: 0.8rem;
   color: #f5f5f5;

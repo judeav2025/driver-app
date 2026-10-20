@@ -220,6 +220,12 @@ $('recal').addEventListener('click', () => {
   state.calibrateNext = true;
 });
 
+// Closing the socket removes the car from the game; the reload starts over at the join screen.
+$('leave').addEventListener('click', () => {
+  socket.close();
+  location.reload();
+});
+
 // Remember the last name so a rejoin is one tap. Storage can be blocked (private mode), so never rely on it.
 function storedName() {
   try {
