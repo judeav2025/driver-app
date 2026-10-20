@@ -13,10 +13,13 @@
     <p class="join-text">Scan to join, or go to</p>
     <p id="url" class="url"></p>
     <p id="count" class="count">0 players</p>
+    <button id="startRace" class="big" disabled>Start race</button>
+    <p id="timer" class="timer" hidden></p>
     <p id="status" class="status">connecting…</p>
   </aside>
   <main>
     <canvas id="road"></canvas>
+    <div id="overlay" hidden></div>
   </main>
 
   <script src="/socket.io/socket.io.js"></script>

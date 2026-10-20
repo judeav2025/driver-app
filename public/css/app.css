@@ -105,6 +105,36 @@ button.small {
   border-radius: 8px;
 }
 
+#hud {
+  position: absolute;
+  left: 50%;
+  top: calc(max(10px, env(safe-area-inset-top)) + 40px);
+  transform: translateX(-50%);
+  padding: 6px 14px;
+  font-weight: 700;
+  white-space: nowrap;
+  background: rgba(0, 0, 0, 0.55);
+  border-radius: 999px;
+  pointer-events: none;
+}
+
+#banner {
+  position: absolute;
+  left: 16px;
+  right: 16px;
+  top: 30%;
+  text-align: center;
+  white-space: pre-line;
+  font-size: 1.2rem;
+  font-weight: 700;
+  line-height: 1.4;
+  text-shadow: 0 2px 6px rgba(0, 0, 0, 0.9);
+  pointer-events: none;
+}
+
+#banner:empty { display: none; }
+#banner.count { font-size: 5rem; color: #ffd54f; }
+
 #debug {
   padding: 6px 16px;
   padding-bottom: max(6px, env(safe-area-inset-bottom));
@@ -146,7 +176,51 @@ body.screen {
 .count { margin: 16px 0 0; font-size: 2.2rem; font-weight: 800; color: #ffd54f; }
 .status { margin: 0; color: #ff8a80; min-height: 1.2em; }
 
-body.screen main { min-height: 0; }
+body.screen main { min-height: 0; position: relative; }
+
+#startRace { margin-top: 16px; }
+#startRace:disabled { opacity: 0.4; cursor: default; }
+.timer { margin: 16px 0 0; font-size: 2.6rem; font-weight: 800; }
+
+#overlay {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  pointer-events: none;
+  text-shadow: 0 3px 10px rgba(0, 0, 0, 0.9);
+}
+
+#overlay.count { font-size: 12rem; font-weight: 900; color: #ffd54f; }
+
+#overlay.results { background: rgba(17, 20, 24, 0.82); }
+#overlay.results h2 { margin: 0 0 16px; font-size: 3rem; }
+
+.board {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  counter-reset: rank;
+  width: min(640px, 90%);
+  font-size: 1.6rem;
+}
+
+.board li {
+  counter-increment: rank;
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 8px 4px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.12);
+}
+
+.board li::before { content: counter(rank); width: 2ch; text-align: right; color: #9aa4ad; font-weight: 800; }
+.board li:first-child { font-size: 2.1rem; color: #ffd54f; }
+.board .dot { width: 18px; height: 18px; border-radius: 50%; flex: none; }
+.board .name { flex: 1; font-weight: 700; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.board .score { font-variant-numeric: tabular-nums; }
 
 @media (max-width: 700px) {
   body.screen { grid-template-columns: 1fr; grid-template-rows: auto 1fr; }
