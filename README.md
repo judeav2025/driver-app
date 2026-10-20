@@ -2,6 +2,26 @@
 
 Hackathon sandbox project
 
+## Run it
+
+```
+npm install
+npm run dev     # http://localhost:3000, big screen at /screen
+npm test
+```
+
+## Play on real phones
+
+Phones need HTTPS for tilt steering, so share your laptop through a free Cloudflare quick tunnel. No Cloudflare account is needed.
+
+1. Install `cloudflared` once:
+   - macOS: `brew install cloudflared`
+   - Windows: `winget install --id Cloudflare.cloudflared`
+2. Run `npm run share`. It starts the server and the tunnel, then prints a public `https://….trycloudflare.com` URL.
+3. Open `<URL>/screen` on the laptop. Phones scan the QR code; cellular data works too.
+
+The URL changes on every run and stops when you press Ctrl+C. Anyone with the URL can reach your server, so stop it when you are done. Set `PORT` if 3000 is busy: `PORT=3900 npm run share`.
+
 ## Getting started
 
 To make it easy for you to get started with GitLab, here's a list of recommended next steps.
