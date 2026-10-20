@@ -2,7 +2,7 @@ import { approach, clamp } from './steer.js';
 import { fitCanvas, makeView, drawRoad, drawCourse, drawCar, xToPixel, spinProgress, spinAngle } from './road.js';
 import { buildCourse, distanceAt, findPedestrian, pedestrianAt, scoreFor, SPEED_START, SPIN_MS, PICKUPS } from './course.js';
 import { io } from './net.js';
-import { renderStandings, byScore } from './board.js';
+import { renderStandings, byScore, minimizable } from './board.js';
 
 const $ = (id) => document.getElementById(id);
 const canvas = $('road');
@@ -90,6 +90,7 @@ function renderResults() {
 
 // Top-right standings during a race.
 const liveRows = new Map();
+minimizable($('live'), $('liveToggle'), 'driver:screenLiveMin');
 function renderLive(now, ph) {
   const live = $('live');
   live.hidden = !race || cars.size === 0;

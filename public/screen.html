@@ -21,7 +21,9 @@
     <canvas id="road"></canvas>
     <div id="overlay" hidden></div>
     <section id="live" hidden>
-      <h2>Live scores</h2>
+      <h2><button id="liveToggle" class="live-toggle" aria-expanded="true" aria-controls="liveBoard">
+        Live scores <span class="caret" aria-hidden="true">▾</span>
+      </button></h2>
       <ol id="liveBoard" class="board live"></ol>
     </section>
   </main>

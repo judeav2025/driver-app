@@ -34,3 +34,28 @@ export function renderStandings(list, rows, standings, meId = null) {
 export function byScore(a, b) {
   return b.score - a.score || a.crashes - b.crashes || a.name.localeCompare(b.name);
 }
+
+// Tapping the title hides or shows the list. Each device remembers its choice;
+// storage can be blocked (private mode), so it falls back to the default.
+export function minimizable(section, toggle, key, startMin = false) {
+  const set = (min) => {
+    section.classList.toggle('min', min);
+    toggle.setAttribute('aria-expanded', String(!min));
+  };
+  let stored = null;
+  try {
+    stored = localStorage.getItem(key);
+  } catch {
+    // use the default
+  }
+  set(stored == null ? startMin : stored === '1');
+  toggle.addEventListener('click', () => {
+    const min = !section.classList.contains('min');
+    set(min);
+    try {
+      localStorage.setItem(key, min ? '1' : '0');
+    } catch {
+      // not remembered, that's fine
+    }
+  });
+}

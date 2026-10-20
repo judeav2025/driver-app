@@ -5,7 +5,7 @@ import {
   SPEED_START, SPIN_MS, PICKUPS, CRASH_PENALTY,
 } from './course.js';
 import { io } from './net.js';
-import { renderStandings, byScore } from './board.js';
+import { renderStandings, byScore, minimizable } from './board.js';
 
 const SEND_MS = 66; // ~15 Hz
 const TILT_TIMEOUT_MS = 1000;
@@ -381,6 +381,7 @@ function renderHud(now, ph) {
 // Everyone's score during a race, refreshed every few seconds so it is easy to read.
 // Our own row uses the local score, which is the most up to date.
 const liveRows = new Map();
+minimizable($('live'), $('liveToggle'), 'driver:liveMin', true);
 let liveAt = -Infinity;
 function renderLive(now, ph) {
   const live = $('live');
