@@ -2,8 +2,6 @@
 
 Phone-tilt driving game for the AvantiCon hackathon. Everyone scans a QR code, gets a car, and steers by tilting their phone while the big screen shows every car.
 
-**Live:** https://avanticon-driver.fly.dev/ (phones) · https://avanticon-driver.fly.dev/screen (projector)
-
 Plan and milestones: [Linear project](https://linear.app/avantiplus/project/avanticon-driver-24ced053ad42/overview). Team rules: [AGENTS.md](AGENTS.md).
 
 ## Run locally
@@ -41,16 +39,4 @@ The URL changes on every run and stops when you press Ctrl+C. Anyone with the UR
 
 Messages: phone → server `join {name?, color?}`, `state {x}`. Server → phone `welcome {id, name, color, x}`. Server → everyone `snapshot {players}`.
 
-## Deploy (Fly.io)
-
-The app lives on Fly.io as `avanticon-driver` in Toronto (`yyz`). Game state is held in server memory, so it must run on **exactly one machine** (always deploy with `--ha=false`). The machine never auto-stops, so there's no cold start mid-demo.
-
-```
-brew install flyctl          # or see fly.io/docs/flyctl/install
-fly auth login               # needs access to the app's Fly org
-fly deploy --ha=false
-fly logs                     # tail server logs
-fly status                   # should show 1 machine, checks passing
-```
-
-There's no CI (no GitLab runners), so deploys are run by hand after pushing to `main`.
+Game state is held in server memory, so whatever hosts this must run a single instance.
