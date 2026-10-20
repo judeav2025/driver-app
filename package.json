@@ -14,7 +14,11 @@
     "share": "node scripts/share.js",
     "test": "node --test \"test/*.test.js\"",
     "cf:dev": "wrangler dev",
-    "deploy": "wrangler deploy"
+    "deploy": "wrangler deploy",
+    "e2e": "playwright test --project=local",
+    "e2e:live": "playwright test --project=live",
+    "predeploy": "npm test && npm run e2e",
+    "postdeploy": "npm run e2e:live"
   },
   "dependencies": {
     "express": "^5.3.0",
@@ -22,6 +26,7 @@
     "ws": "^8.22.0"
   },
   "devDependencies": {
+    "@playwright/test": "1.48.2",
     "wrangler": "^4.151.3"
   }
 }
