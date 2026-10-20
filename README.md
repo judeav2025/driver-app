@@ -39,4 +39,6 @@ The URL changes on every run and stops when you press Ctrl+C. Anyone with the UR
 
 Messages: phone → server `join {name?, color?}`, `state {x}`. Server → phone `welcome {id, name, color, x}`. Server → everyone `snapshot {players}`.
 
-Game state is held in server memory, so whatever hosts this must run a single instance.
+## Hosting
+
+Served through a Cloudflare Tunnel to a single `npm start`. Game state is held in server memory, so run exactly **one** instance. Two would split the room.
