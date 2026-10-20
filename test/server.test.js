@@ -4,8 +4,8 @@ import { once } from 'node:events';
 import { io as connect } from 'socket.io-client';
 import { createDriverServer } from '../server.js';
 
-async function startServer(t) {
-  const server = createDriverServer();
+async function startServer(t, options) {
+  const server = createDriverServer(options);
   server.httpServer.listen(0);
   await once(server.httpServer, 'listening');
   const base = `http://localhost:${server.httpServer.address().port}`;
@@ -40,7 +40,7 @@ test('/health reports player count', async (t) => {
   const { base } = await startServer(t);
   const res = await fetch(`${base}/health`);
   assert.equal(res.status, 200);
-  assert.deepEqual(await res.json(), { ok: true, players: 0 });
+  assert.deepEqual(await res.json(), { ok: true, players: 0, phase: 'lobby' });
 });
 
 test('pages and the socket.io client are served', async (t) => {
@@ -49,6 +49,7 @@ test('pages and the socket.io client are served', async (t) => {
     ['/', 'Start your engine'],
     ['/screen', 'id="qr"'],
     ['/js/phone.js', 'deviceorientation'],
+    ['/js/course.js', 'buildCourse'],
     ['/socket.io/socket.io.js', 'io'],
   ]) {
     const res = await fetch(base + path);
@@ -126,4 +127,44 @@ test('state from a socket that never joined is ignored', async (t) => {
   lurker.emit('state', { x: 0.5 });
   await new Promise((r) => setTimeout(r, 100));
   assert.equal(game.count, 0);
+});
+
+test('the screen starts a race; everyone gets the seed, crashes are counted, results arrive at the end', async (t) => {
+  const { base } = await startServer(t, { countdownMs: 50, raceMs: 300 });
+  const screen = client(t, base);
+  const phone = client(t, base);
+  phone.emit('join', {});
+  await once(phone, 'welcome');
+
+  phone.emit('start'); // players can't start the race
+  await new Promise((r) => setTimeout(r, 50));
+
+  const phoneStart = once(phone, 'start');
+  screen.emit('start');
+  const [start] = await once(screen, 'start');
+  assert.deepEqual((await phoneStart)[0].seed, start.seed);
+  assert.equal(start.durationMs, 300);
+  assert.ok(start.startsInMs > 0 && start.startsInMs <= 50);
+
+  // A screen opened mid-race picks it up straight away.
+  await new Promise((r) => setTimeout(r, 80));
+  const late = client(t, base);
+  const [lateStart] = await once(late, 'start');
+  assert.equal(lateStart.seed, start.seed);
+  assert.ok(lateStart.startsInMs < 0);
+
+  phone.emit('crash');
+  await snapshotWhere(screen, (s) => s.players[0]?.crashes === 1);
+
+  const [{ leaderboard }] = await once(screen, 'end');
+  assert.equal(leaderboard.length, 1);
+  assert.equal(leaderboard[0].id, phone.id);
+  assert.equal(leaderboard[0].crashes, 1);
+
+  // Screens that connect after the race see the results.
+  const after = client(t, base);
+  const [{ leaderboard: again }] = await once(after, 'end');
+  assert.deepEqual(again, leaderboard);
+  const health = await (await fetch(`${base}/health`)).json();
+  assert.equal(health.phase, 'results');
 });
