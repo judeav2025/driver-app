@@ -97,21 +97,101 @@ function drawBox(ctx, px, py, size) {
   ctx.restore();
 }
 
-// angle rotates the car for spin-outs.
+// Mixes a #rrggbb colour toward white (amount > 0) or black (amount < 0).
+function shade(hex, amount) {
+  const n = parseInt(hex.slice(1), 16);
+  const target = amount > 0 ? 255 : 0;
+  const t = Math.abs(amount);
+  const mix = (c) => Math.round(c + (target - c) * t);
+  return `rgb(${mix(n >> 16)}, ${mix((n >> 8) & 255)}, ${mix(n & 255)})`;
+}
+
+function roundRect(ctx, x, y, w, h, r) {
+  ctx.beginPath();
+  ctx.roundRect(x, y, w, h, r);
+}
+
+// Top-down car facing up the road, shaded to look 3D. angle rotates it for spin-outs.
 export function drawCar(ctx, px, py, size, { color, label, alpha = 1, angle = 0, crashed = false }) {
+  const w = size * 0.62;
+  const l = size;
   ctx.save();
   ctx.globalAlpha = alpha;
-  // Coloured halo so identical emoji are tellable apart.
-  ctx.fillStyle = color;
-  ctx.beginPath();
-  ctx.arc(px, py, size * 0.62, 0, Math.PI * 2);
-  ctx.fill();
   ctx.translate(px, py);
   ctx.rotate(angle);
-  ctx.font = `${size}px system-ui, "Apple Color Emoji", "Segoe UI Emoji", sans-serif`;
-  ctx.textAlign = 'center';
-  ctx.textBaseline = 'middle';
-  ctx.fillText('🚗', 0, 0);
+
+  // Shadow on the road.
+  ctx.fillStyle = 'rgba(0,0,0,0.35)';
+  roundRect(ctx, -w / 2 + size * 0.06, -l / 2 + size * 0.08, w, l, w * 0.3);
+  ctx.fill();
+
+  // Wheels poking out from under the body.
+  ctx.fillStyle = '#111';
+  const ww = w * 0.2;
+  const wl = l * 0.22;
+  for (const y of [-l * 0.3, l * 0.3 - wl]) {
+    roundRect(ctx, -w / 2 - ww * 0.35, y, ww, wl, ww * 0.3);
+    ctx.fill();
+    roundRect(ctx, w / 2 - ww * 0.65, y, ww, wl, ww * 0.3);
+    ctx.fill();
+  }
+
+  // Body: dark at the sides, bright down the middle, so it reads as curved.
+  const body = ctx.createLinearGradient(-w / 2, 0, w / 2, 0);
+  body.addColorStop(0, shade(color, -0.45));
+  body.addColorStop(0.3, color);
+  body.addColorStop(0.5, shade(color, 0.35));
+  body.addColorStop(0.7, color);
+  body.addColorStop(1, shade(color, -0.45));
+  ctx.fillStyle = body;
+  roundRect(ctx, -w / 2, -l / 2, w, l, w * 0.32);
+  ctx.fill();
+  ctx.strokeStyle = shade(color, -0.6);
+  ctx.lineWidth = Math.max(1, size * 0.02);
+  ctx.stroke();
+
+  // Windscreen and rear window.
+  const glass = ctx.createLinearGradient(0, -l * 0.25, 0, l * 0.3);
+  glass.addColorStop(0, '#9fd3ff');
+  glass.addColorStop(1, '#1b2a3a');
+  ctx.fillStyle = glass;
+  ctx.beginPath();
+  ctx.moveTo(-w * 0.36, -l * 0.08);
+  ctx.lineTo(w * 0.36, -l * 0.08);
+  ctx.lineTo(w * 0.28, -l * 0.24);
+  ctx.lineTo(-w * 0.28, -l * 0.24);
+  ctx.closePath();
+  ctx.fill();
+  ctx.fillStyle = '#1b2a3a';
+  ctx.beginPath();
+  ctx.moveTo(-w * 0.34, l * 0.2);
+  ctx.lineTo(w * 0.34, l * 0.2);
+  ctx.lineTo(w * 0.28, l * 0.3);
+  ctx.lineTo(-w * 0.28, l * 0.3);
+  ctx.closePath();
+  ctx.fill();
+
+  // Roof, lit from above.
+  const roof = ctx.createLinearGradient(-w * 0.3, 0, w * 0.3, 0);
+  roof.addColorStop(0, shade(color, -0.2));
+  roof.addColorStop(0.5, shade(color, 0.5));
+  roof.addColorStop(1, shade(color, -0.2));
+  ctx.fillStyle = roof;
+  roundRect(ctx, -w * 0.33, -l * 0.08, w * 0.66, l * 0.28, w * 0.12);
+  ctx.fill();
+
+  // Headlights and tail lights.
+  ctx.fillStyle = '#fff6c2';
+  roundRect(ctx, -w * 0.4, -l * 0.49, w * 0.22, l * 0.05, l * 0.02);
+  ctx.fill();
+  roundRect(ctx, w * 0.18, -l * 0.49, w * 0.22, l * 0.05, l * 0.02);
+  ctx.fill();
+  ctx.fillStyle = '#ff2b2b';
+  roundRect(ctx, -w * 0.4, l * 0.44, w * 0.2, l * 0.04, l * 0.02);
+  ctx.fill();
+  roundRect(ctx, w * 0.2, l * 0.44, w * 0.2, l * 0.04, l * 0.02);
+  ctx.fill();
+
   ctx.restore();
   if (crashed) {
     ctx.save();
