@@ -249,6 +249,34 @@ body.screen main { min-height: 0; position: relative; }
 .board .name { flex: 1; font-weight: 700; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .board .score { font-variant-numeric: tabular-nums; }
 
+#live {
+  position: absolute;
+  top: 16px;
+  right: 16px;
+  width: min(320px, 40%);
+  max-height: calc(100% - 32px);
+  display: flex;
+  flex-direction: column;
+  padding: 12px 14px;
+  background: rgba(17, 20, 24, 0.78);
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  border-radius: 14px;
+}
+
+#live h2 { margin: 0 0 6px; font-size: 1.1rem; color: #9aa4ad; }
+
+.board.live {
+  width: 100%;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  font-size: 1.1rem;
+}
+
+.board.live li { gap: 10px; padding: 6px 2px; }
+.board.live li:first-child { font-size: 1.3rem; }
+.board.live .dot { width: 12px; height: 12px; }
+
 @media (max-width: 700px) {
   body.screen { grid-template-columns: 1fr; grid-template-rows: auto 1fr; }
   #qr { max-width: 160px; }

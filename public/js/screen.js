@@ -1,6 +1,6 @@
 import { approach, clamp } from './steer.js';
 import { fitCanvas, makeView, drawRoad, drawCourse, drawCar, xToPixel, spinProgress, spinAngle } from './road.js';
-import { buildCourse, distanceAt, SPEED_START, SPIN_MS } from './course.js';
+import { buildCourse, distanceAt, scoreFor, SPEED_START, SPIN_MS } from './course.js';
 import { io } from './net.js';
 
 const $ = (id) => document.getElementById(id);
@@ -11,7 +11,7 @@ const joinUrl = `${location.origin}/`;
 $('qr').src = `/qr.svg?u=${encodeURIComponent(joinUrl)}`;
 $('url').textContent = joinUrl.replace(/^https?:\/\//, '').replace(/\/$/, '');
 
-const cars = new Map(); // id -> {name, color, x, shownX, row, crashes, crashedAt}
+const cars = new Map(); // id -> {name, color, x, shownX, row, crashes, crashedAt, seenAt}
 let race = null; // {seed, course, startAt, endAt} in performance.now() time
 let results = null;
 let dist = 0;
@@ -26,7 +26,8 @@ socket.on('snapshot', ({ players }) => {
     seen.add(p.id);
     const prev = cars.get(p.id);
     const crashedAt = prev && p.crashes > prev.crashes ? performance.now() : prev?.crashedAt ?? null;
-    cars.set(p.id, { ...p, shownX: prev ? prev.shownX : p.x, crashedAt });
+    const seenAt = prev?.seenAt ?? performance.now();
+    cars.set(p.id, { ...p, shownX: prev ? prev.shownX : p.x, crashedAt, seenAt });
   }
   for (const id of cars.keys()) if (!seen.has(id)) cars.delete(id);
   $('count').textContent = `${players.length} player${players.length === 1 ? '' : 's'}`;
@@ -82,6 +83,45 @@ function renderResults() {
     list.append(li);
   }
   overlay.append(h, list);
+}
+
+// Top-right standings during a race. Rows are reused so the list keeps its scroll position.
+const liveRows = new Map(); // id -> {li, dot, name, score}
+function renderLive(now, ph) {
+  const live = $('live');
+  live.hidden = !race || cars.size === 0;
+  if (live.hidden) return;
+  const elapsed = (car) => (Math.min(now, race.endAt) - Math.max(race.startAt, car.seenAt)) / 1000;
+  const standings = [...cars.values()]
+    .map((car) => ({ ...car, score: ph === 'countdown' ? 0 : scoreFor(elapsed(car), car.crashes) }))
+    .sort((a, b) => b.score - a.score || a.crashes - b.crashes || a.name.localeCompare(b.name));
+  const list = $('liveBoard');
+  for (const [id, row] of liveRows) {
+    if (!cars.has(id)) {
+      row.li.remove();
+      liveRows.delete(id);
+    }
+  }
+  standings.forEach((car, i) => {
+    let row = liveRows.get(car.id);
+    if (!row) {
+      const li = document.createElement('li');
+      const dot = document.createElement('span');
+      dot.className = 'dot';
+      const name = document.createElement('span');
+      name.className = 'name';
+      const score = document.createElement('span');
+      score.className = 'score';
+      li.append(dot, name, score);
+      row = { li, dot, name, score };
+      liveRows.set(car.id, row);
+    }
+    row.dot.style.background = car.color;
+    if (row.name.textContent !== car.name) row.name.textContent = car.name;
+    const text = `${car.score} · 💥 ${car.crashes}`;
+    if (row.score.textContent !== text) row.score.textContent = text;
+    if (list.children[i] !== row.li) list.insertBefore(row.li, list.children[i] ?? null);
+  });
 }
 
 // Sidebar controls and the big centred countdown / results.
@@ -154,6 +194,7 @@ function frame(now) {
   }
 
   renderUi(now, ph);
+  renderLive(now, ph);
   requestAnimationFrame(frame);
 }
 requestAnimationFrame(frame);
