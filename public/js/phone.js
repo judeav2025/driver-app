@@ -14,6 +14,7 @@ const LATE_JOIN_GRACE_MS = 1500; // dropped into a race already underway: don't 
 const GO_MS = 800;
 const FLASH_MS = 1400; // pickup and pedestrian messages over the road
 const INK_BLOBS = 6;
+const LIVE_REFRESH_MS = 1000;
 const NAME_KEY = 'driver:name';
 const CAR_FRAC_SIDEWAYS = 0.86; // a short screen needs all the road ahead it can get
 
@@ -377,12 +378,17 @@ function renderHud(now, ph) {
   banner.className = ph === 'countdown' || text === 'GO!' ? 'count' : text === state.flash?.text ? 'flash' : '';
 }
 
-// Everyone's score during a race. Our own row uses the local score, which is the most up to date.
+// Everyone's score during a race, refreshed every few seconds so it is easy to read.
+// Our own row uses the local score, which is the most up to date.
 const liveRows = new Map();
+let liveAt = -Infinity;
 function renderLive(now, ph) {
   const live = $('live');
+  const wasHidden = live.hidden;
   live.hidden = !state.race || !state.me;
   if (live.hidden) return;
+  if (!wasHidden && now - liveAt < LIVE_REFRESH_MS) return;
+  liveAt = now;
   const { startAt, endAt } = state.race;
   const counting = ph !== 'countdown';
   const others = [...state.others.values()].map((p) => {
