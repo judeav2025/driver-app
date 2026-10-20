@@ -4,7 +4,7 @@ import {
   mulberry32, buildCourse, distanceAt, speedAt, findCrash, hitsBox, scoreFor,
   findPedestrian, findPickup, pedestrianAt,
   RACE_MS, SPEED_START, SPEED_END, SPIN_MS, CAR_HALF_W, CAR_HALF_L, BOX_HALF, CRASH_PENALTY,
-  PED_EDGE, PED_HALF, PICKUP_HALF, PICKUPS, COIN_POINTS,
+  PED_EDGE, PED_HALF, PICKUP_HALF, PICKUPS, COIN_POINTS, leadFor, MAX_LEAD, LEAD_PTS, LEAD_RATE,
 } from '../public/js/course.js';
 import { SPEED as STEER_SPEED, integrate } from '../public/js/steer.js';
 
@@ -106,6 +106,15 @@ test('score rewards time driven and penalises crashes', () => {
   assert.equal(scoreFor(60, 1, 3), 600 - CRASH_PENALTY + 3 * COIN_POINTS);
   assert.equal(scoreFor(-5, 0), 0);
   assert.ok(SPIN_MS > 0);
+});
+
+test('drivers ahead on points pull ahead of the pack, up to a limit', () => {
+  assert.equal(leadFor(500, [500]), 0, 'racing alone: no lead');
+  assert.equal(leadFor(500, [500, 500, 500]), 0, 'all level: no lead');
+  assert.equal(leadFor(400, [400, 600]), 0, 'behind the average: no lead');
+  assert.equal(leadFor(600, [400, 600]), (100 / LEAD_PTS) * MAX_LEAD);
+  assert.equal(leadFor(2000, [0, 2000]), MAX_LEAD);
+  assert.ok(LEAD_RATE < SPEED_START, 'losing the lead never drives a car backwards');
 });
 
 test('pedestrians and pickups are seeded, sorted, on the road and clear of the box rows', () => {

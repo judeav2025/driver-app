@@ -1,8 +1,8 @@
 import { lateralTilt, tiltToSteer, integrate, approach, clamp } from './steer.js';
-import { fitCanvas, makeView, drawRoad, drawCourse, drawCar, xToPixel, spinProgress, spinAngle } from './road.js';
+import { fitCanvas, makeView, drawRoad, drawCourse, drawCar, xToPixel, yToPixel, spinProgress, spinAngle } from './road.js';
 import {
-  buildCourse, distanceAt, findCrash, findPedestrian, findPickup, pedestrianAt, scoreFor,
-  SPEED_START, SPIN_MS, PICKUPS, CRASH_PENALTY,
+  buildCourse, distanceAt, findCrash, findPedestrian, findPickup, pedestrianAt, scoreFor, leadFor,
+  SPEED_START, SPIN_MS, PICKUPS, CRASH_PENALTY, LEAD_RATE,
 } from './course.js';
 import { io } from './net.js';
 import { renderStandings, byScore, minimizable } from './board.js';
@@ -27,7 +27,7 @@ const canvas = $('road');
 const state = {
   me: null, // {id, name, color}
   x: 0,
-  others: new Map(), // id -> {name, color, x, shownX, crashes, coins, crashedAt, seenAt}
+  others: new Map(), // id -> {name, color, x, shownX, lead, shownLead, crashes, coins, crashedAt, seenAt}
   mode: 'starting', // 'tilt' | 'buttons'
   tilt: null, // latest lateral tilt in degrees
   neutral: 0,
@@ -36,7 +36,8 @@ const state = {
   keys: { left: false, right: false },
   connected: false,
   playerCount: 0,
-  dist: 0, // how far down the course we are, world units
+  dist: 0, // how far down the course the pack is, world units; the camera follows it
+  lead: 0, // how far ahead of the pack our car is, for being ahead on points
   race: null, // {seed, course, startAt, endAt} in performance.now() time
   typedName: '', // what the player typed; the server decides the final name
   joinedAt: 0,
@@ -87,7 +88,7 @@ socket.on('snapshot', ({ players }) => {
     const prev = state.others.get(p.id);
     const crashedAt = prev && p.crashes > prev.crashes ? performance.now() : prev?.crashedAt ?? null;
     const seenAt = prev?.seenAt ?? performance.now();
-    state.others.set(p.id, { ...p, shownX: prev ? prev.shownX : p.x, crashedAt, seenAt });
+    state.others.set(p.id, { ...p, shownX: prev ? prev.shownX : p.x, shownLead: prev ? prev.shownLead : p.lead, crashedAt, seenAt });
   }
   for (const id of state.others.keys()) if (!seen.has(id)) state.others.delete(id);
   renderDebug();
@@ -114,20 +115,38 @@ socket.on('start', ({ seed, startsInMs, durationMs }) => {
   state.flash = null;
   state.graceUntil = startsInMs < 0 ? now + LATE_JOIN_GRACE_MS : 0;
   state.x = 0;
+  state.lead = 0;
 });
 
 socket.on('end', ({ leaderboard }) => {
   state.race = null;
   state.effect = null;
+  state.lead = 0;
   state.results = leaderboard;
 });
 
-let lastSentX = null;
+// The host abandoned the race or cleared the results: back to the lobby.
+socket.on('reset', () => {
+  state.race = null;
+  state.results = null;
+  state.effect = null;
+  state.flash = null;
+  state.lead = 0;
+});
+
+// The host removed us. Stop reconnecting and start over at the join screen, saying why.
+socket.on('kicked', () => {
+  socket.close();
+  location.replace(`${location.pathname}?kicked`);
+});
+
+let lastSent = null;
 setInterval(() => {
   if (!state.connected || !state.me) return;
-  if (state.x === lastSentX) return;
-  lastSentX = state.x;
-  socket.volatile.emit('state', { x: state.x });
+  const lead = Math.round(state.lead * 100) / 100;
+  if (lastSent && state.x === lastSent.x && lead === lastSent.lead) return;
+  lastSent = { x: state.x, lead };
+  socket.volatile.emit('state', lastSent);
 }, SEND_MS);
 
 // --- Controls -----------------------------------------------------------
@@ -258,6 +277,10 @@ function storeName(name) {
 }
 
 $('name').value = storedName();
+if (new URLSearchParams(location.search).has('kicked')) {
+  $('kickedMsg').hidden = false;
+  history.replaceState(null, '', location.pathname);
+}
 
 // Submitting by tap or by the keyboard's Go key both count as the user gesture iOS needs.
 $('joinForm').addEventListener('submit', async (e) => {
@@ -307,14 +330,15 @@ function crash(now) {
 function checkCollisions(now, sec) {
   if (now < state.graceUntil) return;
   const { course } = state.race;
+  const dist = state.dist + state.lead;
   const spinning = spinProgress(state.crashedAt, now, SPIN_MS) != null;
   const invincible = activeEffect(now) === 'star';
 
-  const p = findPickup(course, state.x, state.dist, state.taken);
+  const p = findPickup(course, state.x, dist, state.taken);
   if (p >= 0) grab(now, p, course.pickups[p].kind);
 
   // Pedestrians always hop clear; it only costs you if you weren't already spinning or starred.
-  const j = findPedestrian(course, state.x, state.dist, sec, state.boinked);
+  const j = findPedestrian(course, state.x, dist, sec, state.boinked);
   if (j >= 0) {
     state.boinked.set(j, { sec, x: pedestrianAt(course.pedestrians[j], sec).x });
     if (!spinning && !invincible) {
@@ -325,7 +349,7 @@ function checkCollisions(now, sec) {
   }
 
   if (spinning) return;
-  const i = findCrash(course, state.x, state.dist, state.hit);
+  const i = findCrash(course, state.x, dist, state.hit);
   if (i < 0) return;
   state.hit.add(i); // smashed through with the star still counts as hit, so it can't crash you later
   if (!invincible) crash(now);
@@ -390,15 +414,29 @@ function renderLive(now, ph) {
   if (live.hidden) return;
   if (!wasHidden && now - liveAt < LIVE_REFRESH_MS) return;
   liveAt = now;
-  const { startAt, endAt } = state.race;
   const counting = ph !== 'countdown';
-  const others = [...state.others.values()].map((p) => {
-    const seconds = (Math.min(now, endAt) - Math.max(startAt, p.seenAt)) / 1000;
-    return { ...p, score: counting ? scoreFor(seconds, p.crashes, p.coins) : 0 };
-  });
+  const others = [...state.others.values()].map((p) => ({ ...p, score: counting ? otherScore(p, now) : 0 }));
   const me = { ...state.me, crashes: state.crashes, score: counting ? liveScore(now) : 0 };
   const standings = [...others, me].sort(byScore);
   renderStandings($('liveBoard'), liveRows, standings, me.id);
+}
+
+function otherScore(p, now) {
+  const { startAt, endAt } = state.race;
+  const seconds = (Math.min(now, endAt) - Math.max(startAt, p.seenAt)) / 1000;
+  return scoreFor(seconds, p.crashes, p.coins);
+}
+
+// Ahead on points: ease forward of the pack. Slow enough that we never roll backwards.
+function updateLead(now, ph, dt) {
+  let target = 0;
+  if (ph === 'racing' && state.me) {
+    const mine = liveScore(now);
+    target = leadFor(mine, [mine, ...[...state.others.values()].map((p) => otherScore(p, now))]);
+  }
+  if (ph === 'finished') target = state.lead;
+  const step = LEAD_RATE * dt;
+  state.lead = clamp(target, state.lead - step, state.lead + step);
 }
 
 function resultsText() {
@@ -456,6 +494,7 @@ function frame(now) {
   const sec = state.race ? (now - state.race.startAt) / 1000 : 0;
   if (state.race) state.dist = distanceAt(sec, state.race.endAt - state.race.startAt);
   else state.dist += dt * SPEED_START;
+  updateLead(now, ph, dt);
   if (ph === 'racing' && state.me) checkCollisions(now, sec);
 
   const { ctx, w, h } = fitCanvas(canvas);
@@ -463,11 +502,12 @@ function frame(now) {
   drawRoad(ctx, view, state.dist);
   drawCourse(ctx, view, state.race?.course, state.dist, { sec, taken: state.taken, boinked: state.boinked });
 
-  // Ghosts first so the player's own car is drawn on top.
+  // Ghosts first so the player's own car is drawn on top. Leaders sit further up the road.
   for (const p of state.others.values()) {
     p.shownX = approach(p.shownX, p.x, dt);
+    p.shownLead = approach(p.shownLead ?? 0, state.race ? p.lead ?? 0 : 0, dt, 4);
     const spin = spinProgress(p.crashedAt, now, SPIN_MS);
-    drawCar(ctx, xToPixel(view, p.shownX), view.carY, view.carSize, {
+    drawCar(ctx, xToPixel(view, p.shownX), yToPixel(view, state.dist + p.shownLead, state.dist), view.carSize, {
       color: p.color,
       alpha: GHOST_ALPHA,
       angle: spin == null ? 0 : spinAngle(spin),
@@ -476,7 +516,7 @@ function frame(now) {
   if (state.me) {
     const spin = spinProgress(state.crashedAt, now, SPIN_MS);
     const kind = activeEffect(now);
-    drawCar(ctx, xToPixel(view, state.x), view.carY, view.carSize, {
+    drawCar(ctx, xToPixel(view, state.x), yToPixel(view, state.dist + state.lead, state.dist), view.carSize, {
       color: state.me.color,
       label: 'YOU',
       angle: spin == null ? 0 : spinAngle(spin),

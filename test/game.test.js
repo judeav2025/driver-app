@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { Game } from '../lib/game.js';
 import { randomName, cleanName, cleanColor, COLORS } from '../lib/names.js';
-import { buildCourse, COIN_POINTS } from '../public/js/course.js';
+import { buildCourse, COIN_POINTS, MAX_LEAD } from '../public/js/course.js';
 
 test('join assigns a funny name, a palette colour and centres the car', () => {
   const game = new Game();
@@ -220,4 +220,53 @@ test('non-coin pickups are recorded but do not score, and a new race resets them
   game.startRace(mirror.seed);
   assert.equal(game.players.get('a').pickups, 0);
   assert.equal(game.pickup('a', mirror.i), true, 'can be taken again next race');
+});
+
+test('lead is clamped, only counts during a race, and goes back to zero after it', () => {
+  let t = 0;
+  const game = new Game({ now: () => t, countdownMs: 0, raceMs: 1000 });
+  game.join('a');
+  game.setState('a', { x: 0, lead: 1 });
+  assert.equal(game.players.get('a').lead, 0, 'no lead in the lobby');
+  game.startRace(1);
+  game.setState('a', { x: 0, lead: 99 });
+  assert.equal(game.players.get('a').lead, MAX_LEAD);
+  game.setState('a', { x: 0, lead: -3 });
+  assert.equal(game.players.get('a').lead, 0);
+  game.setState('a', { x: 0, lead: 0.5 });
+  game.setState('a', { x: 0, lead: 'far' });
+  assert.equal(game.snapshot().players[0].lead, 0.5, 'shown to everyone, bad values ignored');
+  t = 1000;
+  game.endRace();
+  assert.equal(game.players.get('a').lead, 0);
+});
+
+test('ending a race early scores everyone up to now', () => {
+  let t = 0;
+  const game = new Game({ now: () => t, countdownMs: 0, raceMs: 60_000 });
+  game.join('a');
+  game.startRace(1);
+  t = 10_000;
+  const { leaderboard } = game.endRace();
+  assert.equal(leaderboard[0].score, 100);
+  assert.equal(game.phase, 'results');
+});
+
+test('reset abandons a race or clears results, back to the lobby with scores wiped', () => {
+  let t = 0;
+  const game = new Game({ now: () => t, countdownMs: 0, raceMs: 1000 });
+  game.join('a');
+  assert.equal(game.reset(), false, 'nothing to reset in the lobby');
+  game.startRace(1);
+  t = 10;
+  game.crash('a');
+  assert.equal(game.reset(), true);
+  assert.equal(game.phase, 'lobby');
+  assert.equal(game.players.get('a').crashes, 0);
+  game.startRace(2);
+  t = 2000;
+  game.endRace();
+  assert.equal(game.reset(), true);
+  assert.equal(game.phase, 'lobby');
+  assert.equal(game.leaderboard, null);
 });

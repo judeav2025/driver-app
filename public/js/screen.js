@@ -1,5 +1,5 @@
 import { approach, clamp } from './steer.js';
-import { fitCanvas, makeView, drawRoad, drawCourse, drawCar, xToPixel, spinProgress, spinAngle } from './road.js';
+import { fitCanvas, makeView, drawRoad, drawCourse, drawCar, xToPixel, yToPixel, spinProgress, spinAngle } from './road.js';
 import { buildCourse, distanceAt, findPedestrian, pedestrianAt, scoreFor, SPEED_START, SPIN_MS, PICKUPS } from './course.js';
 import { io } from './net.js';
 import { renderStandings, byScore, minimizable } from './board.js';
@@ -12,7 +12,7 @@ const joinUrl = `${location.origin}/`;
 $('qr').src = `/qr.svg?u=${encodeURIComponent(joinUrl)}`;
 $('url').textContent = joinUrl.replace(/^https?:\/\//, '').replace(/\/$/, '');
 
-const cars = new Map(); // id -> {name, color, x, shownX, row, crashes, coins, crashedAt, seenAt, pickups, lastPickup, pickedAt}
+const cars = new Map(); // id -> {name, color, x, shownX, lead, shownLead, row, crashes, coins, crashedAt, seenAt, pickups, lastPickup, pickedAt}
 let race = null; // {seed, course, startAt, endAt, boinked} in performance.now() time
 let results = null;
 let dist = 0;
@@ -29,10 +29,11 @@ socket.on('snapshot', ({ players }) => {
     const crashedAt = prev && p.crashes > prev.crashes ? performance.now() : prev?.crashedAt ?? null;
     const seenAt = prev?.seenAt ?? performance.now();
     const pickedAt = prev && p.pickups > prev.pickups ? performance.now() : prev?.pickedAt ?? null;
-    cars.set(p.id, { ...p, shownX: prev ? prev.shownX : p.x, crashedAt, seenAt, pickedAt });
+    cars.set(p.id, { ...p, shownX: prev ? prev.shownX : p.x, shownLead: prev ? prev.shownLead : p.lead, crashedAt, seenAt, pickedAt });
   }
   for (const id of cars.keys()) if (!seen.has(id)) cars.delete(id);
   $('count').textContent = `${players.length} player${players.length === 1 ? '' : 's'}`;
+  renderRoster();
 });
 
 socket.on('start', ({ seed, startsInMs, durationMs }) => {
@@ -49,7 +50,55 @@ socket.on('end', ({ leaderboard }) => {
   renderResults();
 });
 
+socket.on('reset', () => {
+  race = null;
+  results = null;
+});
+
 $('startRace').addEventListener('click', () => socket.emit('start'));
+
+// Host controls. The ones that throw away a race in progress ask first.
+$('endRace').addEventListener('click', () => {
+  if (confirm('End the race now and show the results?')) socket.emit('endRace');
+});
+$('resetRace').addEventListener('click', () => {
+  if (!race || confirm('Abandon this race? Nobody gets a score.')) socket.emit('reset');
+});
+$('kickAll').addEventListener('click', () => {
+  if (confirm(`Remove all ${cars.size} players? They can scan the QR to join again.`)) socket.emit('kickAll');
+});
+$('roster').addEventListener('click', (e) => {
+  const btn = e.target.closest('button[data-id]');
+  if (btn) socket.emit('kick', { id: btn.dataset.id });
+});
+
+// Everyone connected, in join order, each with a button to remove them.
+// Only rebuilt when someone joins, leaves or is renamed, not on every steering update.
+let rosterKey = '';
+function renderRoster() {
+  const sorted = [...cars.values()].sort((a, b) => a.row - b.row);
+  const key = sorted.map((c) => `${c.id}:${c.name}:${c.color}`).join('|');
+  if (key === rosterKey) return;
+  rosterKey = key;
+  const items = sorted.map((car) => {
+    const li = document.createElement('li');
+    const dot = document.createElement('span');
+    dot.className = 'dot';
+    dot.style.background = car.color;
+    const name = document.createElement('span');
+    name.className = 'name';
+    name.textContent = car.name;
+    const kick = document.createElement('button');
+    kick.className = 'small';
+    kick.dataset.id = car.id;
+    kick.textContent = 'Kick';
+    kick.setAttribute('aria-label', `Kick ${car.name}`);
+    li.append(dot, name, kick);
+    return li;
+  });
+  $('roster').replaceChildren(...items);
+  $('kickAll').disabled = !sorted.length;
+}
 
 function phase(now) {
   if (race) {
@@ -108,6 +157,9 @@ function renderUi(now, ph) {
   btn.hidden = ph !== 'lobby' && ph !== 'results';
   btn.disabled = cars.size === 0;
   btn.textContent = ph === 'results' ? 'Race again' : 'Start race';
+  $('endRace').hidden = ph !== 'countdown' && ph !== 'racing';
+  $('resetRace').hidden = ph === 'lobby';
+  $('resetRace').textContent = ph === 'results' ? 'Back to lobby' : 'Abandon race';
 
   const timer = $('timer');
   timer.hidden = ph !== 'racing';
@@ -144,7 +196,7 @@ function carEffect(car, now) {
 // Phones decide who crashed; the big screen just makes any pedestrian a car drives into hop clear.
 function boinkPedestrians(sec) {
   for (const car of cars.values()) {
-    const j = findPedestrian(race.course, car.shownX, dist, sec, race.boinked);
+    const j = findPedestrian(race.course, car.shownX, dist + car.shownLead, sec, race.boinked);
     if (j >= 0) race.boinked.set(j, { sec, x: pedestrianAt(race.course.pedestrians[j], sec).x });
   }
 }
@@ -159,15 +211,18 @@ function frame(now) {
   else dist += dt * SPEED_START;
   if (ph === 'racing') boinkPedestrians(sec);
 
+  for (const car of cars.values()) car.shownLead = approach(car.shownLead ?? 0, race ? car.lead ?? 0 : 0, dt, 4);
+
   const { ctx, w, h } = fitCanvas(canvas);
   const view = makeView(w, h);
   drawRoad(ctx, view, dist);
   drawCourse(ctx, view, race?.course, dist, { sec, boinked: race?.boinked });
 
-  // During a race everyone is on the same stretch of road, so every car sits on the same line.
+  // During a race the camera follows the pack; drivers ahead on points sit further up the road.
   const sorted = [...cars.values()].sort((a, b) => a.row - b.row);
   const inRace = Boolean(race);
-  const { size, rowY } = inRace ? { size: view.carSize, rowY: () => view.carY } : rows(h, sorted.length);
+  const raceY = (i) => yToPixel(view, dist + sorted[i].shownLead, dist);
+  const { size, rowY } = inRace ? { size: view.carSize, rowY: raceY } : rows(h, sorted.length);
   sorted.forEach((car, i) => {
     car.shownX = approach(car.shownX, car.x, dt);
     const spin = spinProgress(car.crashedAt, now, SPIN_MS);

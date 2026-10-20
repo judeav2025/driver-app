@@ -30,6 +30,12 @@ export const PICKUP_HALF = 0.12;
 export const PICKUP_DRAW = 0.3;
 export const COIN_POINTS = 30;
 
+// Drivers ahead on points pull ahead of the pack, so they see less of the road coming.
+// The camera stays with the pack; a leader is up to MAX_LEAD further down the course.
+export const MAX_LEAD = 1.5;
+export const LEAD_PTS = 120; // points above the field's average for the full lead
+export const LEAD_RATE = 0.4; // units per second the lead can grow or shrink, well under SPEED_START
+
 // ms is how long the effect lasts (for a coin, how long its badge shows).
 export const PICKUPS = {
   coin: { emoji: '🪙', ms: 900, text: `🪙 +${COIN_POINTS} pts` },
@@ -174,6 +180,13 @@ export function findPedestrian(course, carX, dist, sec, alreadyHit) {
 
 export function findPickup(course, carX, dist, alreadyTaken) {
   return findOverlap(course.pickups, carX, dist, alreadyTaken, PICKUP_HALF);
+}
+
+// How far ahead of the pack a driver should be, from their score and everyone's (theirs included).
+export function leadFor(score, scores) {
+  if (scores.length < 2) return 0;
+  const average = scores.reduce((sum, s) => sum + s, 0) / scores.length;
+  return clamp((score - average) / LEAD_PTS, 0, 1) * MAX_LEAD;
 }
 
 export function scoreFor(secondsDriven, crashes, coins = 0) {
