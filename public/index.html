@@ -11,7 +11,12 @@
   <section id="join" class="panel">
     <h1>🚗 AvantiCon Driver</h1>
     <p>Hold your phone upright and tilt it left and right to steer.</p>
-    <button id="start" class="big">Start your engine</button>
+    <form id="joinForm">
+      <label for="name">Your name</label>
+      <input id="name" name="name" type="text" maxlength="24" autocomplete="nickname" autocapitalize="words"
+             spellcheck="false" enterkeyhint="go" placeholder="Leave empty for a random one">
+      <button id="start" class="big" type="submit">Start your engine</button>
+    </form>
     <p class="hint">Hold the phone level when you tap. That sets "straight ahead".</p>
   </section>
 

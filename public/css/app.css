@@ -39,6 +39,33 @@ body.phone {
 
 .hint { color: #9aa4ad; font-size: 0.9rem; max-width: 22rem; }
 
+#joinForm {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 10px;
+  width: min(100%, 22rem);
+}
+
+#joinForm label { color: #9aa4ad; font-size: 0.9rem; text-align: left; }
+
+#name {
+  padding: 14px 16px;
+  font: inherit;
+  font-size: 1.2rem; /* 16px+ stops iOS zooming in on focus */
+  color: #f5f5f5;
+  background: #1b2026;
+  border: 2px solid rgba(255, 255, 255, 0.25);
+  border-radius: 12px;
+  -webkit-user-select: text;
+  user-select: text;
+}
+
+#name:focus { outline: none; border-color: #ffd54f; }
+#name::placeholder { color: #6b7680; }
+
+#joinForm button.big { margin-top: 6px; }
+
 button.big {
   padding: 20px 32px;
   font-size: 1.4rem;

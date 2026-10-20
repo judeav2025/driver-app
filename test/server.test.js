@@ -61,6 +61,7 @@ test('pages and the socket.io client are served', async (t) => {
   const { base } = await startServer(t);
   for (const [path, needle] of [
     ['/', 'Start your engine'],
+    ['/', 'id="name"'],
     ['/screen', 'id="qr"'],
     ['/js/phone.js', 'deviceorientation'],
     ['/js/course.js', 'buildCourse'],
@@ -106,6 +107,24 @@ test('a joined player is welcomed and their x is relayed to everyone', async (t)
 
   const health = await (await fetch(`${base}/health`)).json();
   assert.equal(health.players, 1);
+});
+
+test('a typed name is welcomed, shown to the screen, and kept on reconnect', async (t) => {
+  const { base } = await startServer(t);
+  const screen = client(t, base);
+  const phone = client(t, base);
+  phone.emit('join', { name: 'Turbo Sam 🏎️' });
+  const [welcome] = await next(phone, 'welcome');
+  assert.equal(welcome.name, 'Turbo Sam');
+  await snapshotWhere(screen, (s) => s.players.some((p) => p.id === phone.id && p.name === 'Turbo Sam'));
+
+  // Same phone after a network drop: new socket, sends back what it was given.
+  phone.close();
+  const again = client(t, base);
+  again.emit('join', { name: welcome.name, color: welcome.color });
+  const [rewelcome] = await next(again, 'welcome');
+  assert.equal(rewelcome.name, 'Turbo Sam');
+  assert.equal(rewelcome.color, welcome.color);
 });
 
 test('a second tab sees the first player, and leaving removes the car', async (t) => {

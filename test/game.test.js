@@ -134,3 +134,37 @@ test('starting a new race resets crashes', () => {
   game.startRace(2);
   assert.equal(game.players.get('a').crashes, 0);
 });
+
+test('typed names are kept as cleaned; empty or all-symbol names fall back to a random one', () => {
+  const game = new Game();
+  assert.equal(game.join('a', { name: '  Sam  ' }).name, 'Sam');
+  assert.equal(game.join('b', { name: 'Zoë 🚗🔥 #1!' }).name, 'Zoë 1');
+  assert.equal(game.join('c', { name: 'x'.repeat(30) }).name, 'x'.repeat(24));
+  assert.match(game.join('d', { name: '' }).name, /^\w+ \w+$/);
+  assert.match(game.join('e', { name: '🚗🚗' }).name, /^\w+ \w+$/);
+});
+
+test('a second player with the same name gets a suffix, case-insensitively', () => {
+  const game = new Game();
+  assert.equal(game.join('a', { name: 'Sam' }).name, 'Sam');
+  assert.equal(game.join('b', { name: 'sam' }).name, 'sam (2)');
+  assert.equal(game.join('c', { name: 'Sam' }).name, 'Sam (3)');
+  game.leave('a');
+  assert.equal(game.join('d', { name: 'Sam' }).name, 'Sam', 'free again once they leave');
+  const long = 'y'.repeat(24);
+  game.join('e', { name: long });
+  const dup = game.join('f', { name: long }).name;
+  assert.equal(dup, `${'y'.repeat(20)} (2)`);
+  assert.ok(dup.length <= 24);
+});
+
+test('a reconnecting phone keeps its exact name, suffix included, even if its old connection lingers', () => {
+  const game = new Game();
+  game.join('a', { name: 'Sam' });
+  const second = game.join('b', { name: 'Sam' });
+  assert.equal(second.name, 'Sam (2)');
+  // Old socket "b" hasn't timed out yet when the phone comes back as "b2".
+  const back = game.join('b2', { name: second.name, color: second.color });
+  assert.equal(back.name, 'Sam (2)');
+  assert.equal(back.color, second.color);
+});

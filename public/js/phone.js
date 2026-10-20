@@ -8,6 +8,7 @@ const TILT_TIMEOUT_MS = 1000;
 const GHOST_ALPHA = 0.35;
 const LATE_JOIN_GRACE_MS = 1500; // dropped into a race already underway: don't crash on arrival
 const GO_MS = 800;
+const NAME_KEY = 'driver:name';
 
 const $ = (id) => document.getElementById(id);
 const canvas = $('road');
@@ -26,6 +27,7 @@ const state = {
   playerCount: 0,
   dist: 0, // how far down the course we are, world units
   race: null, // {seed, course, startAt, endAt} in performance.now() time
+  typedName: '', // what the player typed; the server decides the final name
   joinedAt: 0,
   hit: new Set(), // indices of boxes already crashed into this race
   crashes: 0,
@@ -41,7 +43,7 @@ const socket = io({ autoConnect: false });
 socket.on('connect', () => {
   state.connected = true;
   // On reconnect, ask for the same name/colour so the player keeps their identity.
-  socket.emit('join', state.me ? { name: state.me.name, color: state.me.color } : {});
+  socket.emit('join', state.me ? { name: state.me.name, color: state.me.color } : { name: state.typedName });
   renderDebug();
 });
 
@@ -176,6 +178,7 @@ holdButton($('right'), 1);
 
 const KEYMAP = { ArrowLeft: 'left', a: 'left', ArrowRight: 'right', d: 'right' };
 window.addEventListener('keydown', (e) => {
+  if (e.target instanceof HTMLInputElement) return; // typing a name, not steering
   if (KEYMAP[e.key]) state.keys[KEYMAP[e.key]] = true;
 });
 window.addEventListener('keyup', (e) => {
@@ -195,7 +198,31 @@ $('recal').addEventListener('click', () => {
   state.calibrateNext = true;
 });
 
-$('start').addEventListener('click', async () => {
+// Remember the last name so a rejoin is one tap. Storage can be blocked (private mode), so never rely on it.
+function storedName() {
+  try {
+    return localStorage.getItem(NAME_KEY) || '';
+  } catch {
+    return '';
+  }
+}
+
+function storeName(name) {
+  try {
+    localStorage.setItem(NAME_KEY, name);
+  } catch {
+    // not remembered, that's fine
+  }
+}
+
+$('name').value = storedName();
+
+// Submitting by tap or by the keyboard's Go key both count as the user gesture iOS needs.
+$('joinForm').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  state.typedName = $('name').value.trim();
+  storeName(state.typedName);
+  $('name').blur();
   // Permission prompts must be triggered straight from this tap.
   const [tiltOk] = await Promise.all([requestTilt(), requestWakeLock()]);
   $('join').hidden = true;

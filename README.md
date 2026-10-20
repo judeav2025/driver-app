@@ -31,12 +31,14 @@ The URL changes on every run and stops when you press Ctrl+C. Anyone with the UR
 
 ## Playing
 
-1. Players scan the QR on `/screen` and tap **Start your engine**. In the lobby they can steer around an empty road.
+1. Players scan the QR on `/screen`, type a name (or leave it empty for a random one) and tap **Start your engine**. In the lobby they can steer around an empty road.
 2. The host presses **Start race** on `/screen`. Everyone gets a 3-second countdown, then a 60-second course that scrolls by itself and slowly speeds up.
 3. Hitting a box spins your car out for a moment (no steering) and costs 50 points. You earn 10 points per second you're in the race.
 4. At the end, `/screen` shows the leaderboard and each phone shows its own place. **Race again** starts a new course.
 
 People can join mid-race; they score from when they joined.
+
+Names keep letters, numbers, spaces and `' - ( )`, up to 24 characters; emoji and other symbols are dropped. A second "Sam" becomes "Sam (2)". The phone remembers the last typed name, and a reconnecting phone keeps its name.
 
 ## How it works
 
