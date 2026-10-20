@@ -1,0 +1,25 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>AvantiCon Driver · Big Screen</title>
+  <link rel="stylesheet" href="/css/app.css">
+</head>
+<body class="screen">
+  <aside id="sidebar">
+    <h1>🚗 AvantiCon Driver</h1>
+    <img id="qr" alt="QR code to join the game">
+    <p class="join-text">Scan to join, or go to</p>
+    <p id="url" class="url"></p>
+    <p id="count" class="count">0 players</p>
+    <p id="status" class="status">connecting…</p>
+  </aside>
+  <main>
+    <canvas id="road"></canvas>
+  </main>
+
+  <script src="/socket.io/socket.io.js"></script>
+  <script type="module" src="/js/screen.js"></script>
+</body>
+</html>

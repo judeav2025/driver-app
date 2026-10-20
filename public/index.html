@@ -1,0 +1,32 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+  <meta name="theme-color" content="#111418">
+  <title>AvantiCon Driver</title>
+  <link rel="stylesheet" href="/css/app.css">
+</head>
+<body class="phone">
+  <section id="join" class="panel">
+    <h1>🚗 AvantiCon Driver</h1>
+    <p>Hold your phone upright and tilt it left and right to steer.</p>
+    <button id="start" class="big">Start your engine</button>
+    <p class="hint">Hold the phone level when you tap. That sets "straight ahead".</p>
+  </section>
+
+  <section id="game" hidden>
+    <header id="me"><span id="swatch"></span><span id="myname">…</span></header>
+    <canvas id="road"></canvas>
+    <div id="buttons" hidden>
+      <button id="left" class="steer" aria-label="Steer left">◀</button>
+      <button id="right" class="steer" aria-label="Steer right">▶</button>
+    </div>
+    <button id="recal" class="small">Re-centre tilt</button>
+    <footer id="debug">connecting…</footer>
+  </section>
+
+  <script src="/socket.io/socket.io.js"></script>
+  <script type="module" src="/js/phone.js"></script>
+</body>
+</html>
