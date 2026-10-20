@@ -2,6 +2,7 @@ import { approach, clamp } from './steer.js';
 import { fitCanvas, makeView, drawRoad, drawCourse, drawCar, xToPixel, spinProgress, spinAngle } from './road.js';
 import { buildCourse, distanceAt, findPedestrian, pedestrianAt, scoreFor, SPEED_START, SPIN_MS, PICKUPS } from './course.js';
 import { io } from './net.js';
+import { renderStandings, byScore } from './board.js';
 
 const $ = (id) => document.getElementById(id);
 const canvas = $('road');
@@ -87,8 +88,8 @@ function renderResults() {
   overlay.append(h, list);
 }
 
-// Top-right standings during a race. Rows are reused so the list keeps its scroll position.
-const liveRows = new Map(); // id -> {li, dot, name, score}
+// Top-right standings during a race.
+const liveRows = new Map();
 function renderLive(now, ph) {
   const live = $('live');
   live.hidden = !race || cars.size === 0;
@@ -96,34 +97,8 @@ function renderLive(now, ph) {
   const elapsed = (car) => (Math.min(now, race.endAt) - Math.max(race.startAt, car.seenAt)) / 1000;
   const standings = [...cars.values()]
     .map((car) => ({ ...car, score: ph === 'countdown' ? 0 : scoreFor(elapsed(car), car.crashes, car.coins) }))
-    .sort((a, b) => b.score - a.score || a.crashes - b.crashes || a.name.localeCompare(b.name));
-  const list = $('liveBoard');
-  for (const [id, row] of liveRows) {
-    if (!cars.has(id)) {
-      row.li.remove();
-      liveRows.delete(id);
-    }
-  }
-  standings.forEach((car, i) => {
-    let row = liveRows.get(car.id);
-    if (!row) {
-      const li = document.createElement('li');
-      const dot = document.createElement('span');
-      dot.className = 'dot';
-      const name = document.createElement('span');
-      name.className = 'name';
-      const score = document.createElement('span');
-      score.className = 'score';
-      li.append(dot, name, score);
-      row = { li, dot, name, score };
-      liveRows.set(car.id, row);
-    }
-    row.dot.style.background = car.color;
-    if (row.name.textContent !== car.name) row.name.textContent = car.name;
-    const text = `${car.score} · 💥 ${car.crashes}`;
-    if (row.score.textContent !== text) row.score.textContent = text;
-    if (list.children[i] !== row.li) list.insertBefore(row.li, list.children[i] ?? null);
-  });
+    .sort(byScore);
+  renderStandings($('liveBoard'), liveRows, standings);
 }
 
 // Sidebar controls and the big centred countdown / results.

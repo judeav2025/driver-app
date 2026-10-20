@@ -276,6 +276,21 @@ body.screen main { min-height: 0; position: relative; }
 .board.live li { gap: 10px; padding: 6px 2px; }
 .board.live li:first-child { font-size: 1.3rem; }
 .board.live .dot { width: 12px; height: 12px; }
+.board.live li.me { color: #ffd54f; }
+
+body.phone #live {
+  top: calc(max(10px, env(safe-area-inset-top)) + 84px);
+  right: 8px;
+  width: min(200px, 48vw);
+  max-height: 30vh;
+  padding: 8px 10px;
+}
+
+body.phone #live h2 { font-size: 0.8rem; }
+body.phone .board.live { font-size: 0.85rem; touch-action: pan-y; }
+body.phone .board.live li { gap: 6px; padding: 4px 0; }
+body.phone .board.live li:first-child { font-size: 0.95rem; }
+body.phone .board.live li::before { width: 1.5ch; }
 
 @media (max-width: 700px) {
   body.screen { grid-template-columns: 1fr; grid-template-rows: auto 1fr; }

@@ -5,6 +5,7 @@ import {
   SPEED_START, SPIN_MS, PICKUPS, CRASH_PENALTY,
 } from './course.js';
 import { io } from './net.js';
+import { renderStandings, byScore } from './board.js';
 
 const SEND_MS = 66; // ~15 Hz
 const TILT_TIMEOUT_MS = 1000;
@@ -21,7 +22,7 @@ const canvas = $('road');
 const state = {
   me: null, // {id, name, color}
   x: 0,
-  others: new Map(), // id -> {name, color, x, shownX, crashes, crashedAt}
+  others: new Map(), // id -> {name, color, x, shownX, crashes, coins, crashedAt, seenAt}
   mode: 'starting', // 'tilt' | 'buttons'
   tilt: null, // latest lateral tilt in degrees
   neutral: 0,
@@ -80,7 +81,8 @@ socket.on('snapshot', ({ players }) => {
     seen.add(p.id);
     const prev = state.others.get(p.id);
     const crashedAt = prev && p.crashes > prev.crashes ? performance.now() : prev?.crashedAt ?? null;
-    state.others.set(p.id, { ...p, shownX: prev ? prev.shownX : p.x, crashedAt });
+    const seenAt = prev?.seenAt ?? performance.now();
+    state.others.set(p.id, { ...p, shownX: prev ? prev.shownX : p.x, crashedAt, seenAt });
   }
   for (const id of state.others.keys()) if (!seen.has(id)) state.others.delete(id);
   renderDebug();
@@ -364,6 +366,23 @@ function renderHud(now, ph) {
   banner.className = ph === 'countdown' || text === 'GO!' ? 'count' : text === state.flash?.text ? 'flash' : '';
 }
 
+// Everyone's score during a race. Our own row uses the local score, which is the most up to date.
+const liveRows = new Map();
+function renderLive(now, ph) {
+  const live = $('live');
+  live.hidden = !state.race || !state.me;
+  if (live.hidden) return;
+  const { startAt, endAt } = state.race;
+  const counting = ph !== 'countdown';
+  const others = [...state.others.values()].map((p) => {
+    const seconds = (Math.min(now, endAt) - Math.max(startAt, p.seenAt)) / 1000;
+    return { ...p, score: counting ? scoreFor(seconds, p.crashes, p.coins) : 0 };
+  });
+  const me = { ...state.me, crashes: state.crashes, score: counting ? liveScore(now) : 0 };
+  const standings = [...others, me].sort(byScore);
+  renderStandings($('liveBoard'), liveRows, standings, me.id);
+}
+
 function resultsText() {
   const board = state.results;
   const rank = board.findIndex((r) => r.id === socket.id);
@@ -450,6 +469,7 @@ function frame(now) {
   }
   if (activeEffect(now) === 'ink') drawInk(ctx, w, h, state.effect, now);
   renderHud(now, ph);
+  renderLive(now, ph);
 
   requestAnimationFrame(frame);
 }
