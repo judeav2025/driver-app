@@ -15,6 +15,10 @@ const GO_MS = 800;
 const FLASH_MS = 1400; // pickup and pedestrian messages over the road
 const INK_BLOBS = 6;
 const NAME_KEY = 'driver:name';
+const CAR_FRAC_SIDEWAYS = 0.86; // a short screen needs all the road ahead it can get
+
+// Same test as the landscape block in app.css.
+const sideways = matchMedia('(orientation: landscape) and (max-height: 540px)');
 
 const $ = (id) => document.getElementById(id);
 const canvas = $('road');
@@ -221,6 +225,13 @@ function playerSteer() {
 $('recal').addEventListener('click', () => {
   state.calibrateNext = true;
 });
+
+// Turning the phone switches which axis steers, so the old "straight ahead" no longer applies.
+const recalibrate = () => {
+  state.calibrateNext = true;
+};
+if (screen.orientation) screen.orientation.addEventListener('change', recalibrate);
+else window.addEventListener('orientationchange', recalibrate);
 
 // Closing the socket removes the car from the game; the reload starts over at the join screen.
 $('leave').addEventListener('click', () => {
@@ -441,7 +452,7 @@ function frame(now) {
   if (ph === 'racing' && state.me) checkCollisions(now, sec);
 
   const { ctx, w, h } = fitCanvas(canvas);
-  const view = makeView(w, h);
+  const view = makeView(w, h, sideways.matches ? CAR_FRAC_SIDEWAYS : undefined);
   drawRoad(ctx, view, state.dist);
   drawCourse(ctx, view, state.race?.course, state.dist, { sec, taken: state.taken, boinked: state.boinked });
 

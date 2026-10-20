@@ -296,3 +296,74 @@ body.phone .board.live li::before { width: 1.5ch; }
   body.screen { grid-template-columns: 1fr; grid-template-rows: auto 1fr; }
   #qr { max-width: 160px; }
 }
+
+/* --- Phone on its side ----------------------------------------------- */
+
+/* Short and wide: the road runs down the middle at full height, and the text and
+   controls move out onto the grass either side of it. The road is about 36vh wide. */
+@media (orientation: landscape) and (max-height: 540px) {
+  .panel {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    align-content: center;
+    justify-items: center;
+    gap: 8px 32px;
+    padding: max(12px, env(safe-area-inset-top)) max(16px, env(safe-area-inset-right)) 12px max(16px, env(safe-area-inset-left));
+  }
+
+  .panel > :not(form) { grid-column: 1; margin: 0; }
+  .panel h1 { font-size: 1.6rem; }
+  #joinForm { grid-column: 2; grid-row: 1 / span 3; align-self: center; }
+  #name { padding: 10px 14px; }
+  #joinForm button.big { padding: 14px 24px; }
+
+  #game { grid-template-rows: minmax(0, 1fr); }
+
+  #me {
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    padding: max(8px, env(safe-area-inset-top)) max(16px, env(safe-area-inset-right)) 8px max(16px, env(safe-area-inset-left));
+    pointer-events: none;
+  }
+
+  #me button { pointer-events: auto; }
+  #myname { max-width: calc(50vw - 18vh - 48px); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+  #hud {
+    left: max(16px, env(safe-area-inset-left));
+    top: calc(max(8px, env(safe-area-inset-top)) + 40px);
+    max-width: calc(50vw - 18vh - 32px);
+    transform: none;
+    white-space: normal;
+    font-size: 0.9rem;
+  }
+
+  #banner { top: 50%; transform: translateY(-50%); font-size: 1rem; }
+  #banner.flash { font-size: 1.4rem; }
+
+  body.phone #live {
+    top: calc(max(8px, env(safe-area-inset-top)) + 40px);
+    right: max(8px, env(safe-area-inset-right));
+    width: min(200px, calc(50vw - 18vh - 24px));
+    max-height: calc(50vh - 56px);
+  }
+
+  /* Bottom half only, so they sit under the HUD and the live scores. */
+  #buttons {
+    top: 50%;
+    bottom: 32px;
+    padding: 0 max(16px, env(safe-area-inset-right)) 0 max(16px, env(safe-area-inset-left));
+  }
+
+  button.steer { width: 30vw; height: 100%; }
+
+  #debug {
+    position: absolute;
+    left: 0;
+    bottom: 0;
+    padding-left: max(16px, env(safe-area-inset-left));
+    pointer-events: none;
+  }
+}
